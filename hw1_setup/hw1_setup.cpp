@@ -104,6 +104,9 @@ public:
 
 /**
  * prefixSums() - function that encodes & calculate the prefix sum all the data elements, then decode these sums
+ *
+ * @param data - original data array
+ * @param length - size of the data array
  */
 void prefixSums(int *data, int length)
 {
