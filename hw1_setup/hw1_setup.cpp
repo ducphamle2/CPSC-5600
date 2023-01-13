@@ -5,12 +5,29 @@
 #include "ThreadGroup.h"
 using namespace std;
 
-const int N_THREADS = 2;
+const int N_THREADS = 2; /// Number of threads used to encode and decode data elements
 
+/**
+ * @struct ShareData - data structure containing the original array data & its length
+ *
+ * Because we already know the size of data, using ShareData allows us to group the data array and its length together without re-calculating the size of the data array
+ * every time we encode and decode the elements.
+ */
 struct ShareData
 {
-	int *data;
-	int length;
+	int *data;	/// original data array to calculate prefix sum
+	int length; /// the size of the data array
+
+	/**
+	 * ShareData - constructor
+	 *
+	 * @param data - original data array
+	 * @param length - size of the data array
+	 */
+	ShareData(int *data, int length)
+		: data(data), length(length)
+	{
+	}
 };
 
 int encode(int v)
@@ -28,18 +45,23 @@ int decode(int v)
 }
 
 /**
- * @class Example - the template argument to ThreadGroup just has
- * to have an implementation of the ()-operator. (If you're
- * familiar with the STL, this is how functionality is passed in
- * to hash tables, etc.).
+ * @class EncodeThread - A concrete type of the ThreadGroup class, which overloads the ()-operator method to encode the data elements
  */
 class EncodeThread
 {
 public:
+	/**
+	 * ()-operator - a function that is called when we start the thread
+	 *
+	 * @param id - thread id number
+	 * @param sharedData - arbitrary data. Its data type is void * to disable compiler type checking. In our case, this should be ShareData struct
+	 */
 	void operator()(int id, void *sharedData)
 	{
 		ShareData *ourData = (ShareData *)sharedData;
+		// each thread handles a piece of the data array
 		int piece = ourData->length / N_THREADS;
+		// the first thread starts at 0 til the end of the piece, the 2nd thread starts at the next pieice and so on.
 		int start = id * piece;
 		// if id is not final thread, then move to the end of piece by adding 1, else end is already at the last element of data
 		int end = id != N_THREADS - 1 ? (id + 1) * piece : ourData->length;
@@ -52,58 +74,73 @@ public:
 };
 
 /**
- * @class Example - the template argument to ThreadGroup just has
- * to have an implementation of the ()-operator. (If you're
- * familiar with the STL, this is how functionality is passed in
- * to hash tables, etc.).
+ * @class DecodeThread - A concrete type of the ThreadGroup class, which overloads the ()-operator method to decode the data elements
  */
 class DecodeThread
 {
 public:
+	/**
+	 * ()-operator - a function that is called when we start the thread
+	 *
+	 * @param id - thread id number
+	 * @param sharedData - arbitrary data. Its data type is void * to disable compiler type checking. In our case, this should be ShareData struct
+	 */
 	void operator()(int id, void *sharedData)
 	{
 		ShareData *ourData = (ShareData *)sharedData;
+		// each thread handles a piece of the data array
 		int piece = ourData->length / N_THREADS;
+		// the first thread starts at 0 til the end of the piece, the 2nd thread starts at the next pieice and so on.
 		int start = id * piece;
 		// if id is not final thread, then move to the end of piece by adding 1, else end is already at the last element of data
 		int end = id != N_THREADS - 1 ? (id + 1) * piece : ourData->length;
 		for (int i = start; i < end; i++)
 		{
-			// decode the prefix sum and put it back into the data array
+			// decode the prefix sum and put it back into the data array to finish the algorithm
 			ourData->data[i] = decode(ourData->data[i]);
 		}
 	}
 };
 
+/**
+ * prefixSums() - function that encodes & calculate the prefix sum all the data elements, then decode these sums
+ */
 void prefixSums(int *data, int length)
 {
-	ShareData ourData;
-	ourData.data = data;
-	ourData.length = length;
+	// initialize our shared data
+	ShareData *ourData = new ShareData(data, length);
 	int encodedSum = 0;
 
-	// for (int i = 0; i < length; i++)
-	// {
-	// 	cout << "data element: " << ourData.data[i] << endl;
-	// }
-
+	// Create an EncodeThread ThreadGroup class
+	//
+	// Any thread created will call the ()-operator method of the EncodeThread class, which will encode the data array elements
+	//
+	// waitForAll() will wait for all the threads to finish and release memory.
 	ThreadGroup<EncodeThread> encoders;
 	for (int t = 0; t < N_THREADS; t++)
 	{
-		encoders.createThread(t, &ourData);
+		encoders.createThread(t, ourData);
 	}
 	encoders.waitForAll();
 
+	// Do accumulation in sequential and re-assign the data elements to the according sums
+	//
+	// We cannot do this in parallel because the current sum depends on the previous sum value.
 	for (int i = 0; i < length; i++)
 	{
-		encodedSum += ourData.data[i];
-		ourData.data[i] = encodedSum;
+		encodedSum += ourData->data[i];
+		ourData->data[i] = encodedSum;
 	}
 
+	// Create an DecodeThread ThreadGroup class
+	//
+	// Any thread created will call the ()-operator method of the DecodeThread class, which will decode the data array elements, which now contains all prefix sum values
+	//
+	// waitForAll() will wait for all the threads to finish and release memory.
 	ThreadGroup<DecodeThread> decoders;
 	for (int t = 0; t < N_THREADS; t++)
 	{
-		decoders.createThread(t, &ourData);
+		decoders.createThread(t, ourData);
 	}
 	decoders.waitForAll();
 }
