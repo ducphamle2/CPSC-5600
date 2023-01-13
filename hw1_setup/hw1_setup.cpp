@@ -143,6 +143,9 @@ void prefixSums(int *data, int length)
 		decoders.createThread(t, ourData);
 	}
 	decoders.waitForAll();
+
+	// free memory after init ourData
+	delete ourData;
 }
 
 int main()
