@@ -9,5 +9,5 @@ hw1_setup_seq : hw1_setup_seq.cpp
 example : example.cpp ThreadGroup.h
 	g++ $(CPPFLAGS) $< -o $@
 
-all : example hw1_setup hw1_setup_seq
+all : example hw1_setup hw1_setup_seq hw1
 	@echo "Made it all!"
