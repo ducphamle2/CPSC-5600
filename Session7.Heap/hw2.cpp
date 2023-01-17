@@ -62,6 +62,14 @@ public:
     }
 
 private:
+    bool isLeaf(int i)
+    {
+        if (i < n - 1)
+            return false;
+        else
+            return true;
+    }
+
     void calcSum(int i)
     {
         if (isLeaf(i))
@@ -73,17 +81,19 @@ private:
         interior->at(i) = value(left(i)) + value(right(i));
     }
 
-    bool isLeaf(int i)
+    int parent(int childIndex)
     {
-        throw std::invalid_argument("is leaf error");
+        return (childIndex - 1) / 2;
     }
-    int left(int i)
+
+    int left(int parentIndex)
     {
-        throw std::invalid_argument("left error");
+        return parentIndex * 2 + 1;
     }
-    int right(int i)
+
+    int right(int parentIndex)
     {
-        throw std::invalid_argument("right error");
+        return left(parentIndex) + 1;
     }
 };
 
