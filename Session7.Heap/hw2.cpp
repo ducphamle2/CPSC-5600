@@ -7,9 +7,11 @@
 #include "Heap.h"
 #include <vector>
 #include <chrono>
+#include <future>
 using namespace std;
 
 typedef std::vector<int> Data; // define new vector type int called data
+int *vecCount = new int[100];
 
 class Heaper
 {
@@ -48,7 +50,8 @@ class SumHeap : public Heaper
 public:
     SumHeap(const Data *data) : Heaper(data)
     {
-        calcSum(0);
+
+        calcSum(0, 0);
     }
 
     int sum(int node = 0)
@@ -69,7 +72,7 @@ public:
 
     void prefixSums(Data *data)
     {
-        calPrefix(data, 0, 0);
+        calPrefix(data, 0, 0, 0);
         // throw std::invalid_argument("prefix sums error");
     }
 
@@ -82,18 +85,35 @@ private:
             return true;
     }
 
-    void calcSum(int i)
+    void calcSum(int i, int level)
     {
         if (isLeaf(i))
         {
             return;
         }
-        calcSum(left(i));
-        calcSum(right(i));
+
+        // cout << "level: " << level << endl;
+
+        if (level < 4)
+        {
+            auto leftHandle = async(launch::async, &SumHeap::calcSum, this, left(i), level + 1);
+            auto rightHandle = async(launch::async, &SumHeap::calcSum, this, right(i), level + 1);
+            leftHandle.wait();
+            rightHandle.wait();
+        }
+        else
+        {
+            calcSum(left(i), level);
+            calcSum(right(i), level);
+        }
         interior->at(i) = value(left(i)) + value(right(i));
+        if (level < 4)
+        {
+            vecCount[i]++;
+        }
     }
 
-    void calPrefix(Data *data, int i, int sumPrior)
+    void calPrefix(Data *data, int i, int sumPrior, int level)
     {
         if (isLeaf(i))
         {
@@ -104,8 +124,18 @@ private:
         }
         else
         {
-            calPrefix(data, left(i), sumPrior);
-            calPrefix(data, right(i), sumPrior + value(left(i)));
+            if (level < 4)
+            {
+                auto leftHandle = async(launch::async, &SumHeap::calPrefix, this, data, left(i), sumPrior, level + 1);
+                auto rightHandle = async(launch::async, &SumHeap::calPrefix, this, data, right(i), sumPrior + value(left(i)), level + 1);
+                leftHandle.wait();
+                rightHandle.wait();
+            }
+            else
+            {
+                calPrefix(data, left(i), sumPrior, level);
+                calPrefix(data, right(i), sumPrior + value(left(i)), level);
+            }
         }
     }
 
@@ -125,7 +155,7 @@ private:
     }
 };
 
-const int N = 16; // FIXME must be power of 2 for now
+const int N = 1 << 26; // FIXME must be power of 2 for now
 
 Data genTestData()
 {
@@ -152,35 +182,46 @@ Data genTestData()
 int main()
 {
     Data data(N, 1); // put a 1 in each element of the data array
-    // data[0] = 10;
-    data = genTestData();
+    data[0] = 10;
+    // data = genTestData();
     Data prefix(N, 1);
 
     // start timer
-    // auto start = chrono::steady_clock::now();
+    auto start = chrono::steady_clock::now();
 
     SumHeap heap(&data);
-    heap.printSumHeap();
+    // heap.printSumHeap();
     heap.prefixSums(&prefix);
 
     // print prefix after prefix sum
-    for (int i = 0; i < N; i++)
+    // for (int i = 0; i < N; i++)
+    // {
+    //     cout << "|" << prefix.at(i) << "|";
+    // }
+    // cout << endl;
+
+    int total = 0;
+    for (int i = 0; i < 100; i++)
     {
-        cout << "|" << prefix.at(i) << "|";
+        if (vecCount[i] != 0)
+        {
+            cout << "vec count: " << vecCount[i] << endl;
+            total++;
+        }
     }
-    cout << endl;
+    cout << "total thread: " << total << endl;
 
-    // // stop timer
-    // auto end = chrono::steady_clock::now();
-    // auto elpased = chrono::duration<double, milli>(end - start).count();
+    // stop timer
+    auto end = chrono::steady_clock::now();
+    auto elpased = chrono::duration<double, milli>(end - start).count();
 
-    // int check = 10;
-    // for (int elem : prefix)
-    //     if (elem != check++)
-    //     {
-    //         cout << "FAILED RESULT at " << check - 1;
-    //         break;
-    //     }
-    // cout << "in " << elpased << "ms" << endl;
+    int check = 10;
+    for (int elem : prefix)
+        if (elem != check++)
+        {
+            cout << "FAILED RESULT at " << check - 1;
+            break;
+        }
+    cout << "in " << elpased << "ms" << endl;
     return 0;
 }
