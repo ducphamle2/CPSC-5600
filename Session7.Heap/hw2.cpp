@@ -94,8 +94,12 @@ private:
 
         // cout << "level: " << level << endl;
 
+        // according to the hw's requirement, we only need to fork 16 threads to calculate pair-wise sum
+        // based on the heap with power of 2, we have a complete binary tree, each sum can be considered a thread => top 4 levels starting from the root should be 15 threads
+        // 15 + 1 main thread = total 16 threads
         if (level < 4)
         {
+            // This means that we are at the parent node's point of view, and we are creating two new threads for our left child & right child to calculate their sums.
             auto leftHandle = async(launch::async, &SumHeap::calcSum, this, left(i), level + 1);
             auto rightHandle = async(launch::async, &SumHeap::calcSum, this, right(i), level + 1);
             leftHandle.wait();
@@ -192,6 +196,8 @@ int main()
     SumHeap heap(&data);
     // heap.printSumHeap();
     heap.prefixSums(&prefix);
+    // stop timer
+    auto end = chrono::steady_clock::now();
 
     // print prefix after prefix sum
     // for (int i = 0; i < N; i++)
@@ -211,8 +217,6 @@ int main()
     }
     cout << "total thread: " << total << endl;
 
-    // stop timer
-    auto end = chrono::steady_clock::now();
     auto elpased = chrono::duration<double, milli>(end - start).count();
 
     int check = 10;
