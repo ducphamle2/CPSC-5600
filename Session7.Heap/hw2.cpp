@@ -11,7 +11,10 @@
 using namespace std;
 
 typedef std::vector<int> Data; // define new vector type int called data
-int *vecCount = new int[100];
+int *calSumCount = new int[100];
+int *prefixSumCount = new int[100];
+
+const int LEVELS = 4; /// Number of threads used to encode and decode data elements
 
 class Heaper
 {
@@ -50,7 +53,7 @@ class SumHeap : public Heaper
 public:
     SumHeap(const Data *data) : Heaper(data)
     {
-
+        calSumCount[0] = 1;
         calcSum(0, 0);
     }
 
@@ -72,6 +75,7 @@ public:
 
     void prefixSums(Data *data)
     {
+        prefixSumCount[0] = 1;
         calPrefix(data, 0, 0, 0);
         // throw std::invalid_argument("prefix sums error");
     }
@@ -97,13 +101,15 @@ private:
         // according to the hw's requirement, we only need to fork 16 threads to calculate pair-wise sum
         // based on the heap with power of 2, we have a complete binary tree, each sum can be considered a thread => top 4 levels starting from the root should be 15 threads
         // 15 + 1 main thread = total 16 threads
-        if (level < 4)
+        if (level < LEVELS)
         {
+            cout << "left: " << left(i) << endl;
+            cout << "right: " << right(i) << endl;
+            calSumCount[left(i)] = 1;
             // This means that we are at the parent node's point of view, and we are creating two new threads for our left child & right child to calculate their sums.
-            auto leftHandle = async(launch::async, &SumHeap::calcSum, this, left(i), level + 1);
-            auto rightHandle = async(launch::async, &SumHeap::calcSum, this, right(i), level + 1);
-            leftHandle.wait();
-            rightHandle.wait();
+            auto handle = async(launch::async, &SumHeap::calcSum, this, left(i), level + 1);
+            calcSum(right(i), level + 1);
+            handle.wait();
         }
         else
         {
@@ -111,10 +117,6 @@ private:
             calcSum(right(i), level);
         }
         interior->at(i) = value(left(i)) + value(right(i));
-        if (level < 4)
-        {
-            vecCount[i]++;
-        }
     }
 
     void calPrefix(Data *data, int i, int sumPrior, int level)
@@ -128,12 +130,12 @@ private:
         }
         else
         {
-            if (level < 4)
+            if (level < LEVELS)
             {
-                auto leftHandle = async(launch::async, &SumHeap::calPrefix, this, data, left(i), sumPrior, level + 1);
-                auto rightHandle = async(launch::async, &SumHeap::calPrefix, this, data, right(i), sumPrior + value(left(i)), level + 1);
-                leftHandle.wait();
-                rightHandle.wait();
+                prefixSumCount[left(i)] = 1;
+                auto handle = async(launch::async, &SumHeap::calPrefix, this, data, left(i), sumPrior, level + 1);
+                calPrefix(data, right(i), sumPrior + value(left(i)), level + 1);
+                handle.wait();
             }
             else
             {
@@ -183,6 +185,21 @@ Data genTestData()
     return data;
 }
 
+int printCount(int *count)
+{
+    int total = 0;
+    for (int i = 0; i < 100; i++)
+    {
+        if (calSumCount[i] != 0)
+        {
+            cout << "count: " << calSumCount[i] << endl;
+            total++;
+        }
+    }
+
+    return total;
+}
+
 int main()
 {
     Data data(N, 1); // put a 1 in each element of the data array
@@ -194,28 +211,14 @@ int main()
     auto start = chrono::steady_clock::now();
 
     SumHeap heap(&data);
-    // heap.printSumHeap();
     heap.prefixSums(&prefix);
     // stop timer
     auto end = chrono::steady_clock::now();
 
-    // print prefix after prefix sum
-    // for (int i = 0; i < N; i++)
-    // {
-    //     cout << "|" << prefix.at(i) << "|";
-    // }
-    // cout << endl;
-
-    int total = 0;
-    for (int i = 0; i < 100; i++)
-    {
-        if (vecCount[i] != 0)
-        {
-            cout << "vec count: " << vecCount[i] << endl;
-            total++;
-        }
-    }
-    cout << "total thread: " << total << endl;
+    int calSumTotal = printCount(calSumCount);
+    int prefixSumTotal = printCount(prefixSumCount);
+    cout << "total thread calsum: " << calSumTotal << endl;
+    cout << "total thread prefix sum: " << prefixSumTotal << endl;
 
     auto elpased = chrono::duration<double, milli>(end - start).count();
 
