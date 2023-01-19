@@ -133,10 +133,9 @@ public:
      */
     void prefixSums(Data *data)
     {
-        prefix = data;
+        prefix = data;   // initialize prefix pointer
         threadCount = 1; // initialize and reset thread count to 1 as main thread
         calPrefix(0, 0, 0);
-        // throw std::invalid_argument("prefix sums error");
     }
 
     Data *prefix;    // prefix pointer pointing to the vector storing all prefix sum results
