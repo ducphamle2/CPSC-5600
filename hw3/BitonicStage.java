@@ -1,4 +1,25 @@
-public class BitonicStage {
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.TimeUnit;
+
+public class BitonicStage implements Runnable {
+
+    public BitonicStage(SynchronousQueue<double[]> firstInput, SynchronousQueue<double[]> secondInput,
+            SynchronousQueue<double[]> output, String name) {
+        this.firstInput = firstInput;
+        this.secondInput = secondInput;
+        this.output = output;
+        this.name = name;
+    }
+
+    public BitonicStage(SynchronousQueue<double[]> firstInput, SynchronousQueue<double[]> secondInput,
+            SynchronousQueue<double[]> output) {
+        this.firstInput = firstInput;
+        this.secondInput = secondInput;
+        this.output = output;
+    }
+
+    public BitonicStage() {
+    }
 
     private enum Direction {
         UP,
@@ -210,7 +231,36 @@ public class BitonicStage {
         // for (int i = 0; i < bitonicSeq.length; i++) {
         // System.out.println("bitonic sequence after sorting: " + bitonicSeq[i]);
         // }
-        System.out.println("end process");
+        // System.out.println("end process");
         return bitonicSeq;
     }
+
+    /**
+     * The Runnable part of the class. Polls the input queue and when ready, process
+     * (sort)
+     * it and then write it to the output queue.
+     */
+    @Override
+    public void run() {
+        double[] firstArray = new double[1];
+        double[] secondArray = new double[1];
+        while (firstArray != null && secondArray != null) {
+            try {
+                firstArray = firstInput.poll(timeout * 1000, TimeUnit.MILLISECONDS);
+                secondArray = secondInput.poll(timeout * 1000, TimeUnit.MILLISECONDS);
+                if (firstArray != null && secondArray != null) {
+                    double[] outputArray = process(firstArray, secondArray);
+                    output.offer(outputArray, timeout * 1000, TimeUnit.MILLISECONDS);
+                } else {
+                    System.out.println(getClass().getName() + " " + name + " got null array");
+                }
+            } catch (InterruptedException e) {
+                return;
+            }
+        }
+    }
+
+    private SynchronousQueue<double[]> firstInput, secondInput, output;
+    private String name;
+    private static final int timeout = 10; // FIXME: changed to 10 in seconds
 }

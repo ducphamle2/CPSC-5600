@@ -9,8 +9,8 @@
  * @versioon 24-Jan-2020
  */
 public class BitonicSequential {
-    public static final int N = 1 << 5; // FIXME: size of the final sorted array (power of two). Change to 1 << 22
-    public static final int TIME_ALLOWED = 1; // FIXME: change to 10 seconds
+    public static final int N = 1 << 22; // FIXME: size of the final sorted array (power of two). Change to 1 << 22
+    public static final int TIME_ALLOWED = 10; // FIXME: change to 10 seconds
 
     /**
      * Main entry for HW3 assignment.
@@ -46,9 +46,6 @@ public class BitonicSequential {
                 System.exit(1);
             }
             work++;
-            System.out.println("start with time allowed: " + (start + TIME_ALLOWED * 1000));
-            System.out.println("current time millis: " + System.currentTimeMillis());
-            System.out.println("should break: " + ((start + TIME_ALLOWED * 1000) < System.currentTimeMillis()));
         }
         System.out.println("sorted " + work + " arrays (each: " + N + " doubles) in "
                 + TIME_ALLOWED + " seconds");
