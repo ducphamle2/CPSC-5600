@@ -262,5 +262,5 @@ public class BitonicStage implements Runnable {
 
     private SynchronousQueue<double[]> firstInput, secondInput, output;
     private String name;
-    private static final int timeout = 10; // FIXME: changed to 10 in seconds
+    private static final int timeout = 10; // 10 in seconds
 }
