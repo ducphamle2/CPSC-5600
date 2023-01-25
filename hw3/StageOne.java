@@ -9,12 +9,14 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 
 /**
- * First stage of a bitonic sorting network pipeline. This class takes in unordered
- * arrays and sorts them (using library sort since that will be faster for a small
+ * First stage of a bitonic sorting network pipeline. This class takes in
+ * unordered
+ * arrays and sorts them (using library sort since that will be faster for a
+ * small
  * one-thread sort).
  */
 public class StageOne implements Runnable {
-    private static final int timeout = 10;  // in seconds
+    private static final int timeout = 1; // FIXME: changed to 10 in seconds
 
     /**
      * Static method that just sorts the given array.
@@ -37,12 +39,14 @@ public class StageOne implements Runnable {
         this.output = output;
         this.name = name;
     }
+
     public StageOne(SynchronousQueue<double[]> input, SynchronousQueue<double[]> output) {
         this(input, output, "");
     }
 
     /**
-     * The Runnable part of the class. Polls the input queue and when ready, process (sort)
+     * The Runnable part of the class. Polls the input queue and when ready, process
+     * (sort)
      * it and then write it to the output queue.
      */
     @Override
@@ -66,4 +70,3 @@ public class StageOne implements Runnable {
     private SynchronousQueue<double[]> input, output;
     private String name;
 }
-

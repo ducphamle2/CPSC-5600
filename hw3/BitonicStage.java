@@ -204,8 +204,8 @@ public class BitonicStage {
         // System.out.println("bitonic sequence before sorting: " + bitonicSeq[i]);
         // }
 
-        bitonicSortNoRecursion(0, bitonicSeq.length);
-        // bitonicSort(0, bitonicSeq.length, Direction.UP);
+        // bitonicSortNoRecursion(0, bitonicSeq.length);
+        bitonicSort(0, bitonicSeq.length, Direction.UP);
 
         // for (int i = 0; i < bitonicSeq.length; i++) {
         // System.out.println("bitonic sequence after sorting: " + bitonicSeq[i]);
