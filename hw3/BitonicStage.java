@@ -94,7 +94,7 @@ public class BitonicStage implements Runnable {
      * @param i - first index to swap
      * @param j - second index to swap
      */
-    private void swap(int i, int j) {
+    private void swap(double[] bitonicSeq, int i, int j) {
         double temp = bitonicSeq[i];
         bitonicSeq[i] = bitonicSeq[j];
         bitonicSeq[j] = temp;
@@ -108,7 +108,7 @@ public class BitonicStage implements Runnable {
      * @param n         - size of the array we are considering
      * @param direction - array's sorting direction
      */
-    private void bitonicMerge(int start, int n, Direction direction) {
+    private void bitonicMerge(double[] bitonicSeq, int start, int n, Direction direction) {
         if (direction == Direction.UP) {
             // we loop til start + n / 2 because we are comparing two halfs i & i + n / 2
             // when i reaches n / 2 - 1 then i + n / 2 will reach n - 1, which is the end of
@@ -116,13 +116,13 @@ public class BitonicStage implements Runnable {
             for (int i = start; i < start + n / 2; i++) {
                 // with UP, we are sorting in ASC, so if bi[i] > bi[i + n/2 ] => we swap
                 if (bitonicSeq[i] > bitonicSeq[i + n / 2])
-                    swap(i, i + n / 2);
+                    swap(bitonicSeq, i, i + n / 2);
             }
         } else if (direction == Direction.DOWN) {
             for (int i = start; i < start + n / 2; i++) {
                 // DOWN sorts in DESC
                 if (bitonicSeq[i] < bitonicSeq[i + n / 2])
-                    swap(i, i + n / 2);
+                    swap(bitonicSeq, i, i + n / 2);
             }
         }
     }
@@ -135,15 +135,15 @@ public class BitonicStage implements Runnable {
      * @param n         size of the array
      * @param direction direction to sort, can be either up or down
      */
-    private void bitonicSort(int start, int n, Direction direction) {
+    private void bitonicSort(double[] bitonicSeq, int start, int n, Direction direction) {
         if (n > 1) {
             // split the bitonic sequence into two chunks to change the sequence into a
             // non-increasing / non-decreasing sequence
-            bitonicMerge(start, n, direction);
+            bitonicMerge(bitonicSeq, start, n, direction);
             // then recursively sort both sides. n / 2 means we sort the first half then the
             // second half
-            bitonicSort(start, n / 2, direction);
-            bitonicSort(start + n / 2, n / 2, direction);
+            bitonicSort(bitonicSeq, start, n / 2, direction);
+            bitonicSort(bitonicSeq, start + n / 2, n / 2, direction);
         }
     }
 
@@ -162,12 +162,8 @@ public class BitonicStage implements Runnable {
         // We flip 2nd one then concat to make the new array a bitonic sequence.
         double[] concatArray = concat(firstHalf, secondHalf);
 
-        // initiate bitonic sequence based on the inputs so that we dont have to pass in
-        // the bitonic seq into the bitonic sort method
-        bitonicSeq = concatArray;
-
-        bitonicSort(0, bitonicSeq.length, Direction.UP);
-        return bitonicSeq;
+        bitonicSort(concatArray, 0, concatArray.length, Direction.UP);
+        return concatArray;
     }
 
     /**
@@ -209,7 +205,4 @@ public class BitonicStage implements Runnable {
         UP,
         DOWN
     }
-
-    private double[] bitonicSeq; // final sorted sequence of the object after sorting. We create this instance
-                                 // variable so that we dont have to pass it as an argument when sorting
 }
