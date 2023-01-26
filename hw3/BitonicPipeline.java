@@ -28,59 +28,61 @@ public class BitonicPipeline {
             long start = System.currentTimeMillis();
             int work = 0;
 
+            // initialize arrays of threads so that we can interrupt them later, preventing
+            // from spawning too many threads at once.
+            Thread threads[] = new Thread[N_THREADS];
+            Thread randomThreads[] = new Thread[N_RANDOM_GEN_THREADS];
+            double[] ult = new double[1]; // placeholder for the final sorted array
+
+            SynchronousQueue<double[]> input = new SynchronousQueue<>(); // input queue is output of random gen
+                                                                         // thread, also input of the StageOne
+
+            SynchronousQueue<double[]> output = new SynchronousQueue<>(); // output of StageOne, which is input for
+                                                                          // one of the two input queues for first
+                                                                          // bitonic stage
+            // two inputs of bitonic stage
+            SynchronousQueue<double[]> firstInput = new SynchronousQueue<>();
+            SynchronousQueue<double[]> secondInput = new SynchronousQueue<>();
+            SynchronousQueue<double[]> secondStageOutput = new SynchronousQueue<>(); // output of first stage
+                                                                                     // bitonic, used for two inputs
+                                                                                     // of final stage
+
+            // two inputs of the final bitonic stage
+            SynchronousQueue<double[]> finalFirstInput = new SynchronousQueue<>();
+            SynchronousQueue<double[]> finalSecondInput = new SynchronousQueue<>();
+            SynchronousQueue<double[]> finalOutput = new SynchronousQueue<>(); // final output queue, which is
+                                                                               // sorted array
+
+            // initialize and start all threads to wait for inputs in the input queues
+            for (int section = 0; section < N_THREADS; section++) {
+                // 4 stage one threads
+                if (section < 4) {
+                    StageOne stageOne = new StageOne(input, output, "stage ONE thread " + section);
+                    threads[section] = new Thread(stageOne);
+                    threads[section].start();
+
+                } else {
+                    // init second stage with two input queues
+                    BitonicStage bitonic = new BitonicStage(firstInput, secondInput, secondStageOutput,
+                            "stage TWO thread " + section);
+
+                    // if its the final stage then we re-init it
+                    if (section == 6) {
+                        bitonic = new BitonicStage(finalFirstInput, finalSecondInput, finalOutput,
+                                "Final bitonic sort thread");
+                    }
+                    threads[section] = new Thread(bitonic);
+                    threads[section].start();
+                }
+            }
+
             while (System.currentTimeMillis() < start + TIME_ALLOWED * 1000) {
 
-                // initialize arrays of threads so that we can interrupt them later, preventing
-                // from spawning too many threads at once.
-                Thread threads[] = new Thread[N_THREADS];
-                Thread randomThreads[] = new Thread[N_RANDOM_GEN_THREADS];
-                double[] ult = new double[1]; // placeholder for the final sorted array
-
-                SynchronousQueue<double[]> input = new SynchronousQueue<>(); // input queue is output of random gen
-                                                                             // thread, also input of the StageOne
-
-                SynchronousQueue<double[]> output = new SynchronousQueue<>(); // output of StageOne, which is input for
-                                                                              // one of the two input queues for first
-                                                                              // bitonic stage
-                // two inputs of bitonic stage
-                SynchronousQueue<double[]> firstInput = new SynchronousQueue<>();
-                SynchronousQueue<double[]> secondInput = new SynchronousQueue<>();
-                SynchronousQueue<double[]> secondStageOutput = new SynchronousQueue<>(); // output of first stage
-                                                                                         // bitonic, used for two inputs
-                                                                                         // of final stage
-
-                // two inputs of the final bitonic stage
-                SynchronousQueue<double[]> finalFirstInput = new SynchronousQueue<>();
-                SynchronousQueue<double[]> finalSecondInput = new SynchronousQueue<>();
-                SynchronousQueue<double[]> finalOutput = new SynchronousQueue<>(); // final output queue, which is
-                                                                                   // sorted array
-
-                // initialize and start all threads to wait for inputs in the input queues
-                for (int section = 0; section < N_THREADS; section++) {
-                    // 4 stage one threads
-                    if (section < 4) {
-                        StageOne stageOne = new StageOne(input, output, "stage ONE thread " + section);
-                        threads[section] = new Thread(stageOne);
-                        threads[section].start();
-
-                        // initialize $ random generator threads
-                        RandomArrayGenerator randomGenerator = new RandomArrayGenerator(N / 4, input);
-                        randomThreads[section] = new Thread(randomGenerator);
-                        randomThreads[section].start();
-
-                    } else {
-                        // init second stage with two input queues
-                        BitonicStage bitonic = new BitonicStage(firstInput, secondInput, secondStageOutput,
-                                "stage TWO thread " + section);
-
-                        // if its the final stage then we re-init it
-                        if (section == 6) {
-                            bitonic = new BitonicStage(finalFirstInput, finalSecondInput, finalOutput,
-                                    "Final bitonic sort thread");
-                        }
-                        threads[section] = new Thread(bitonic);
-                        threads[section].start();
-                    }
+                for (int i = 0; i < N_RANDOM_GEN_THREADS; i++) {
+                    // initialize $ random generator threads
+                    RandomArrayGenerator randomGenerator = new RandomArrayGenerator(N / 4, input);
+                    randomThreads[i] = new Thread(randomGenerator);
+                    randomThreads[i].start();
                 }
 
                 // now we handle the logic after starting all the threads
@@ -113,14 +115,10 @@ public class BitonicPipeline {
                                     TimeUnit.SECONDS);
 
                     }
-                }
 
-                // interrupt all threads to kill them & create new ones in the next loop to
-                // prevent spawning too many threads
-                for (int i = 0; i < N_THREADS; i++) {
-                    threads[i].interrupt();
-                    if (i < 4) {
-                        // also interrupt all random threads
+                    // interrupt all random threads to kill them all & create new ones to get new
+                    // randoms next round
+                    for (int i = 0; i < N_RANDOM_GEN_THREADS; i++) {
                         randomThreads[i].interrupt();
                     }
                 }
@@ -133,7 +131,18 @@ public class BitonicPipeline {
             }
             System.out.println("sorted " + work + " arrays (each: " + N + " doubles) in "
                     + TIME_ALLOWED + " seconds");
-        } catch (InterruptedException e) {
+
+            // interrupt all threads to kill them all
+            for (int i = 0; i < N_THREADS; i++) {
+                threads[i].interrupt();
+                if (i < N_RANDOM_GEN_THREADS) {
+                    // also interrupt all random threads
+                    randomThreads[i].interrupt();
+                }
+            }
+        } catch (
+
+        InterruptedException e) {
             System.out.println("error: " + e);
         }
     }
