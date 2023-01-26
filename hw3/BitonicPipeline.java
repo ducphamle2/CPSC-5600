@@ -32,7 +32,6 @@ public class BitonicPipeline {
             // from spawning too many threads at once.
             Thread threads[] = new Thread[N_THREADS];
             Thread randomThreads[] = new Thread[N_RANDOM_GEN_THREADS];
-            double[] ult = new double[1]; // placeholder for the final sorted array
 
             SynchronousQueue<double[]> input = new SynchronousQueue<>(); // input queue is output of random gen
                                                                          // thread, also input of the StageOne
@@ -77,6 +76,8 @@ public class BitonicPipeline {
             }
 
             while (System.currentTimeMillis() < start + TIME_ALLOWED * 1000) {
+
+                double[] ult = new double[1]; // placeholder for the final sorted array
 
                 for (int i = 0; i < N_RANDOM_GEN_THREADS; i++) {
                     // initialize $ random generator threads
