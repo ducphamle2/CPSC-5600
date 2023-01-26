@@ -9,13 +9,16 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 
 /**
- * A thread-runnable generator of an array of doubles suitable for hooking up to a pipeline
- * sorter. The array is provided to the pipeline via a SynchronousQueue provided for output.
- * A method to use this class without its own thread, getArray, is provided, too.
+ * A thread-runnable generator of an array of doubles suitable for hooking up to
+ * a pipeline
+ * sorter. The array is provided to the pipeline via a SynchronousQueue provided
+ * for output.
+ * A method to use this class without its own thread, getArray, is provided,
+ * too.
  * For convenience, also includes a static sort-checker.
  */
 public class RandomArrayGenerator implements Runnable {
-    private static final int timeout = 10;  // in seconds
+    private static final int timeout = 10; // in seconds
 
     /**
      * Construct a random array generator that will write to the given output.
@@ -70,13 +73,12 @@ public class RandomArrayGenerator implements Runnable {
                 return false;
             }
             last = a[i];
-            //System.out.print(a[i] + " ");
+            // System.out.print(a[i] + " ");
         }
-        //System.out.println("ok");
+        // System.out.println("ok");
         return true;
     }
 
     private SynchronousQueue<double[]> output;
     private int n;
 }
-

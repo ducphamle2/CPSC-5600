@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
  * one-thread sort).
  */
 public class StageOne implements Runnable {
-    private static final int timeout = 10; // 10 in seconds
+    private static final int timeout = 10; // in seconds
 
     /**
      * Static method that just sorts the given array.

@@ -1,8 +1,29 @@
+/*
+ * Le Duc Pham
+ * CPSC 5600, Seattle University
+ * This is free and unencumbered software released into the public domain.
+ */
+
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Bitonic stage of a bitonic sorting network pipeline. This class takes in
+ * two ASC sorted arrays as inputs
+ * and sorts them using the bitonic sort algorithm.
+ */
 public class BitonicStage implements Runnable {
 
+    /**
+     * Set up a BitonicStage with two SynchronousQueues to read for input and one to
+     * write for output. It includes a name to identify the
+     * thread name
+     *
+     * @param firstInput  where to read the unordered input array
+     * @param secondInput where to read the unordered input array
+     * @param output      where to write the sorted array
+     * @param name        name of the thread
+     */
     public BitonicStage(SynchronousQueue<double[]> firstInput, SynchronousQueue<double[]> secondInput,
             SynchronousQueue<double[]> output, String name) {
         this.firstInput = firstInput;
@@ -11,6 +32,14 @@ public class BitonicStage implements Runnable {
         this.name = name;
     }
 
+    /**
+     * Set up a BitonicStage with two SynchronousQueues to read for input and one to
+     * write for output.
+     *
+     * @param firstInput  where to read the unordered input array
+     * @param secondInput where to read the unordered input array
+     * @param output      where to write the sorted array
+     */
     public BitonicStage(SynchronousQueue<double[]> firstInput, SynchronousQueue<double[]> secondInput,
             SynchronousQueue<double[]> output) {
         this.firstInput = firstInput;
@@ -18,10 +47,11 @@ public class BitonicStage implements Runnable {
         this.output = output;
     }
 
+    /**
+     * Default constructor of Bitonic stage used by BitonicSequential
+     */
     public BitonicStage() {
     }
-
-    private double[] bitonicSeq;
 
     /**
      * flip - reverse the position of an array data, meaning that the array elements
@@ -70,30 +100,48 @@ public class BitonicStage implements Runnable {
         bitonicSeq[j] = temp;
     }
 
+    /**
+     * Compares two elements between n/2 index, and depending on the direction to
+     * swap
+     * 
+     * @param start     starting index to swap in the array
+     * @param n         - size of the array we are considering
+     * @param direction - array's sorting direction
+     */
     private void bitonicMerge(int start, int n, Direction direction) {
-        // System.out.println("start: " + start + " end: " + (start + n / 2));
-        for (int i = start; i < start + n / 2; i++) {
-            // System.out.println("bitonic merge chunk: " + bitonicSeq[i]);
-        }
         if (direction == Direction.UP) {
+            // we loop til start + n / 2 because we are comparing two halfs i & i + n / 2
+            // when i reaches n / 2 - 1 then i + n / 2 will reach n - 1, which is the end of
+            // the array
             for (int i = start; i < start + n / 2; i++) {
+                // with UP, we are sorting in ASC, so if bi[i] > bi[i + n/2 ] => we swap
                 if (bitonicSeq[i] > bitonicSeq[i + n / 2])
-                    // swap
                     swap(i, i + n / 2);
             }
         } else if (direction == Direction.DOWN) {
             for (int i = start; i < start + n / 2; i++) {
+                // DOWN sorts in DESC
                 if (bitonicSeq[i] < bitonicSeq[i + n / 2])
-                    // swap
                     swap(i, i + n / 2);
             }
         }
-        // System.out.println("end chunk");
     }
 
+    /**
+     * Recursively merge and sort the bitonic sequence. The result of this function
+     * is a sorted array based on the given direction
+     * 
+     * @param start     start index of the array to sort
+     * @param n         size of the array
+     * @param direction direction to sort, can be either up or down
+     */
     private void bitonicSort(int start, int n, Direction direction) {
         if (n > 1) {
+            // split the bitonic sequence into two chunks to change the sequence into a
+            // non-increasing / non-decreasing sequence
             bitonicMerge(start, n, direction);
+            // then recursively sort both sides. n / 2 means we sort the first half then the
+            // second half
             bitonicSort(start, n / 2, direction);
             bitonicSort(start + n / 2, n / 2, direction);
         }
@@ -129,10 +177,15 @@ public class BitonicStage implements Runnable {
      */
     @Override
     public void run() {
+        // initialize the arrays so that they are not null. We will reset these two's
+        // pointers when the queues receive new inputs
         double[] firstArray = new double[1];
         double[] secondArray = new double[1];
         while (firstArray != null && secondArray != null) {
             try {
+                // wait for inputs coming from the input queues. We should offer inputs from
+                // outside.
+                // After timeout, poll() will return null
                 firstArray = firstInput.poll(timeout * 1000, TimeUnit.MILLISECONDS);
                 secondArray = secondInput.poll(timeout * 1000, TimeUnit.MILLISECONDS);
                 if (firstArray != null && secondArray != null) {
@@ -150,4 +203,13 @@ public class BitonicStage implements Runnable {
     private SynchronousQueue<double[]> firstInput, secondInput, output;
     private String name;
     private static final int timeout = 10; // 10 in seconds
+
+    // Bitonic sort direction
+    private enum Direction {
+        UP,
+        DOWN
+    }
+
+    private double[] bitonicSeq; // final sorted sequence of the object after sorting. We create this instance
+                                 // variable so that we dont have to pass it as an argument when sorting
 }
