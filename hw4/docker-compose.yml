@@ -1,0 +1,10 @@
+version: '3.3'
+services:
+  java:
+    container_name: java_hw4
+    image: openjdk
+    command: tail -f /dev/null
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    tty: true
