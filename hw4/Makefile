@@ -1,4 +1,4 @@
-CLASSES = BitonicSequential.class BitonicPipeline.class BitonicStage.class RandomArrayGenerator.class StageOne.class
+CLASSES = BitonicParallelSmallGran.class
 JAVAFLAGS = -J-Xmx48m
 
 

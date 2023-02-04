@@ -59,7 +59,7 @@ public class BitonicParallelSmallGran {
                     break;
             }
             // if the length is too small, we reset to base case (granularity = MAX)
-            if (piece == 0)
+            if (piece < 1)
                 piece = end - start;
         }
 
