@@ -15,7 +15,6 @@ public class BitonicParallelSmallGran {
     public static final int N = 1 << 22; // size of the final sorted array (power of two)
     public static final int TIME_ALLOWED = 10; // seconds
     public static final int N_THREADS = 8;
-    public static final Granularity GRANULARITY = Granularity.MAX; // FIXME: change this to adjust the granularity
     // of
     // the algorithm
 
@@ -129,22 +128,28 @@ public class BitonicParallelSmallGran {
 
     }
 
-    public static void main(String[] args) {
+    /**
+     * Starter method used to test the throughput of the algorithm based on the
+     * granularity
+     * 
+     * @param granularity - granularity of the barrier.
+     */
+    public static void start(Granularity granularity, int P) {
         long start = System.currentTimeMillis();
         int work = 0;
         while (System.currentTimeMillis() < start + TIME_ALLOWED * 1000) {
             double[] data = RandomArrayGenerator.getArray(N);
-            CyclicBarrier barrier = new CyclicBarrier(N_THREADS);
-            Thread[] threads = new Thread[N_THREADS];
+            CyclicBarrier barrier = new CyclicBarrier(P);
+            Thread[] threads = new Thread[P];
             for (int i = 0; i < threads.length; i++) {
-                int piece = N / N_THREADS;
+                int piece = N / P;
                 // the first thread starts at 0 til the end of the piece, the 2nd thread starts
                 // at the next pieice and so on.
                 int startIndex = i * piece;
                 // if id is not final thread, then move to the end of piece by adding 1, else
                 // end is already at the last element of data
-                int endIndex = i != N_THREADS - 1 ? (i + 1) * piece : N;
-                threads[i] = new Thread(new BitonicLoopParallel(data, barrier, GRANULARITY, startIndex, endIndex));
+                int endIndex = i != P - 1 ? (i + 1) * piece : N;
+                threads[i] = new Thread(new BitonicLoopParallel(data, barrier, granularity, startIndex, endIndex));
                 threads[i].start();
             }
 
@@ -166,5 +171,26 @@ public class BitonicParallelSmallGran {
         }
         System.out.println("sorted " + work + " arrays (each: " + N + " doubles) in "
                 + TIME_ALLOWED + " seconds");
+    }
+
+    public static void main(String[] args) {
+
+        int p = 1;
+        System.out.printf("Test throughput with granularity = 1, P = %d; N = %d\n", p, N);
+        start(Granularity.MAX, p);
+        p = 2;
+        System.out.printf("Test throughput with granularity = 1, P = %d; N = %d\n", p, N);
+        start(Granularity.MAX, p);
+        p = 4;
+        System.out.printf("Test throughput with granularity = 1, P = %d; N = %d\n", p, N);
+        start(Granularity.MAX, p);
+
+        System.out.printf("Test throughput with granularity = 1, P = %d; N = %d\n", N_THREADS, N);
+        start(Granularity.MAX, N_THREADS);
+        System.out.printf("Test throughput with granularity = 0.5, P = %d; N = %d\n", N_THREADS, N);
+        start(Granularity.HALF, N_THREADS);
+        System.out.printf("Test throughput with granularity = 0.25, P = %d; N = %d\n", N_THREADS, N);
+        start(Granularity.QUARTER, N_THREADS);
+        System.out.println("Done");
     }
 }
