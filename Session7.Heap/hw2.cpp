@@ -1,6 +1,10 @@
 //
-// Created by Kevin Lundeen on 10/21/20.
-// Seattle University, CPSC 5005, Session 7
+// Created by Le Duc Pham.
+// Seattle University, CPSC 5600, Prefix Sum
+// Design - Use a Heap to store interior and leaf nodes, where interior nodes start from 0 to n - 1, and leaf nodes are from n - 1 onward
+// Leaf nodes are the original data array we want to calculate prefix sum with
+// Algorithm - first is to calculate pair-wise sum in pair (parallel)
+// next is to calculate the prefix sum
 //
 
 #include <iostream>
@@ -255,5 +259,7 @@ int main()
             break;
         }
     cout << "in " << elpased << "ms" << endl;
+
+    cout << "Hello World 2023!" << endl;
     return 0;
 }
