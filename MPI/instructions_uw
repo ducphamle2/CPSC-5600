@@ -1,0 +1,15 @@
+download mpich
+		wget http://www.mpich.org/static/tarballs/3.0.2/mpich-3.0.2.tar.gz
+		tar xzf mpich-3.0.2.tar.gz
+
+	build mpich and install in home (can also see mpich-3.0.2/README)
+		cd mpich-3.0.2
+		 ./configure --prefix=$HOME/mpich-install 2>&1 | tee c.txt
+		 make 2>&1 | tee m.txt
+		 make install 2>&1 | tee mi.txt
+
+	put mpi binaries (e.g. mpicc, mpirun) on your PATH
+		add the following line to your ~/.bashrc:
+			export PATH=$PATH:~/mpich-install/bin
+		source ~/.bashrc
+
