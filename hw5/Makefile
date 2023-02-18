@@ -1,5 +1,5 @@
 CPPFLAGS = -std=c++20 -Wall -Werror -pedantic -ggdb
-PROGRAMS = kmean_color_test hw5
+PROGRAMS = kmean_color_test hw5 test
 
 all : $(PROGRAMS)
 
@@ -20,6 +20,9 @@ hw5.o : hw5.cpp Color.h ColorKMeansMPI.h KMeansMPI.h
 
 hw5 : hw5.o Color.o
 	mpic++ $(CPPFLAGS) hw5.o Color.o -o $@
+
+test : test.o
+	mpic++ $(CPPFLAGS) test.o -o $@
 
 run_hw5 : hw5
 	mpirun -n 2 ./hw5

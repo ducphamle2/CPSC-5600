@@ -10,13 +10,14 @@
 #include <cmath>
 #include <array>
 
-class Color {
+class Color
+{
 public:
-    std::array<u_char,3> rgb;
+    std::array<u_char, 3> rgb;
 
     // ctor's and related
     Color();
-    Color(std::array<u_char,3> as_3array);  // not "explicit" since we want automatic conversion from array
+    Color(std::array<u_char, 3> as_3array); // not "explicit" since we want automatic conversion from array
     Color(u_char red, u_char green, u_char blue);
     explicit Color(int hex);
     friend bool operator==(const Color &l, const Color &r);
@@ -37,4 +38,5 @@ public:
 
     // color set
     static void x11Colors(Color **data, std::string **labels, int *size);
+    static void x11ColorsSmall(Color **data, std::string **labels, int *size);
 };

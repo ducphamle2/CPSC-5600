@@ -50,6 +50,11 @@
         "future": "cpp",
         "condition_variable": "cpp",
         "mutex": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "set": "cpp",
+        "ranges": "cpp",
+        "stop_token": "cpp",
         "thread": "cpp"
     }
 }

@@ -8,16 +8,18 @@
 #include "Color.h"
 
 template <int k>
-class ColorKMeansMPI : public KMeansMPI<k,3> {
+class ColorKMeansMPI : public KMeansMPI<k, 3>
+{
 public:
-    void fit(Color *colors, int n) {
+    void fit(Color *colors, int n)
+    {
         // We know that a Color is actually just an array of three bytes so the cast is ok
         // NOTE: this will stop working correctly if the Color data layout is changed in any way
-        KMeansMPI<k,3>::fit(reinterpret_cast<std::array<u_char,3> *>(colors), n);
+        KMeansMPI<k, 3>::fit(reinterpret_cast<std::array<u_char, 3> *>(colors), n);
     }
 
 protected:
-    typedef std::array<u_char,3> Element;
+    typedef std::array<u_char, 3> Element;
     /**
      * We supply the distance method to the abstract KMeansMPI class
      * We use the Euclidean distance between the colors interpreted as 3-d vectors in R,G,B space
@@ -25,7 +27,8 @@ protected:
      * @param b and another
      * @return distance between a and b; 0.0 <= distance <= 441.67 (sqrt(255^2 + 255^2 + 255^2))
      */
-    double distance(const Element& a, const Element& b) const override {
+    double distance(const Element &a, const Element &b) const override
+    {
         return Color(a).euclidDistance(Color(b));
     }
 };

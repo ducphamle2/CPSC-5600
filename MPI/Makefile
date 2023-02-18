@@ -1,4 +1,4 @@
-EXES = mpitest popp71 popp71scatter popp76
+EXES = mpitest popp71 popp71scatter popp76 popp71scatterv
 
 all: $(EXES)
 
