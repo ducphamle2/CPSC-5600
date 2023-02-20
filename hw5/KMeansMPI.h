@@ -64,7 +64,7 @@ public:
     {
         rank = _rank;
         MPI_Comm_size(MPI_COMM_WORLD, &numProcs);               // collect number of processes so we can split into chunks to handle distances
-        processLengthPerProcess(rank);                          // calculate length per process
+        processLengthPerProcess();                              // calculate length per process
         MPI_Bcast(&n, 1, MPI_INT, RootProcess, MPI_COMM_WORLD); // broadcast data & seed clusters to other processes
         scatterElements();
         if (rank == RootProcess)
@@ -90,7 +90,6 @@ public:
     {
         u_char *sendbuf = nullptr, *recvbuf = nullptr; // nullptr allows delete to work for anyone
         int *sendcounts = nullptr, *displs = nullptr;
-        int elements_per_proc = n / numProcs;
         int m = 0; // size of partition
         Element *partition = nullptr;
 
@@ -104,10 +103,10 @@ public:
             for (int pi = 0; pi < numProcs; pi++)
             {
                 displs[pi] = i;
-                int begin_bucket = elements_per_proc * pi;
-                int end_bucket = begin_bucket + elements_per_proc;
+                int begin_bucket = length_per_processes * pi;
+                int end_bucket = begin_bucket + length_per_processes;
                 if (pi == numProcs - 1)
-                    end_bucket += n - elements_per_proc * numProcs; // extras for last proc
+                    end_bucket = n; // TODO: need to reconfirm this part when numProcs > 1
                 for (int bi = begin_bucket; bi < end_bucket; bi++)
                 {
                     for (const auto dimension : elements[bi])
@@ -120,9 +119,9 @@ public:
         }
 
         // set this->m for my process
-        m = elements_per_proc;
-        if (rank == numProcs - 1)
-            m += n - elements_per_proc * numProcs;
+        m = length_per_processes; // TODO: need to reconfirm this part when numProcs > 1
+        // if (rank == numProcs - 1)
+        //     m += n - length_per_processes * numProcs;
 
         // set up receiving side of message (everyone)
         int recvcount = m * d;
@@ -425,7 +424,7 @@ protected:
     /**
      * Calculate element length of a process
      */
-    void processLengthPerProcess(int rank)
+    void processLengthPerProcess()
     {
         length_per_processes = n / numProcs;
 
