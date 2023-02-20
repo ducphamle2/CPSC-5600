@@ -11,7 +11,7 @@
 using namespace std;
 
 // How many k in "k-means"?
-const int K = 5;
+const int K = 9;
 
 // declaration of html helper functions
 void html_cell(ofstream &f, const Color &c, const string &name);
@@ -30,7 +30,7 @@ int main()
     Color *colorList;    // return a list of colors
     string *colorLabels; // list of color labels
     int nColors;
-    Color::x11ColorsSmall(&colorList, &colorLabels, &nColors); // set color list & color labels
+    Color::x11Colors(&colorList, &colorLabels, &nColors); // set color list & color labels
     /*
     cout << "Using colors:" << endl;
     for (int i = 0; i < nColors; i++)

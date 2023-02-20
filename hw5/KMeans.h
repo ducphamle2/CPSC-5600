@@ -47,9 +47,9 @@ public:
     {
         // init step, store all input data in elements
         elements = data;
-        n = data_n;       // calculate n datapoint distances
-        dist.resize(n);   // ??
-        reseedClusters(); // find random values to get started, step 1
+        n = data_n;            // calculate n datapoint distances
+        dist.resize(n);        // ??
+        reseedClustersFixed(); // find random values to get started, step 1
         Clusters prior = clusters;
         prior[0].centroid[0]++; // just to make it different the first time
         int generation = 0;
@@ -84,6 +84,7 @@ protected:
     int n = 0;                               // number of elements in this->elements
     Clusters clusters;                       // k clusters resulting from latest call to fit()
     std::vector<std::array<double, k>> dist; // dist[i][j] is the distance from elements[i] to clusters[j].centroid
+    std::vector<int> seeds;
 
     /**
      * Get the initial cluster centroids.
@@ -93,7 +94,6 @@ protected:
      */
     virtual void reseedClusters()
     {
-        std::vector<int> seeds;
         std::vector<int> candidates(n);
         std::iota(candidates.begin(), candidates.end(), 0);
         auto random = std::mt19937{std::random_device{}()};
@@ -101,6 +101,22 @@ protected:
         std::sample(candidates.begin(), candidates.end(), back_inserter(seeds), k, random);
         for (int i = 0; i < k; i++)
         {
+            clusters[i].centroid = elements[seeds[i]]; // randomly assign an element at index random to be centroid
+            clusters[i].elements.clear();              // reset all elements to get new ones for this round
+        }
+    }
+
+    /**
+     * Get the initial cluster centroids.
+     * Default implementation here is to just pick k elements at random from the element
+     * set
+     * @return list of clusters made by using k random elements as the initial centroids
+     */
+    virtual void reseedClustersFixed()
+    {
+        for (int i = 0; i < k; i++)
+        {
+            seeds.push_back(i);
             clusters[i].centroid = elements[seeds[i]]; // randomly assign an element at index random to be centroid
             clusters[i].elements.clear();              // reset all elements to get new ones for this round
         }

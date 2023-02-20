@@ -39,4 +39,5 @@ public:
     // color set
     static void x11Colors(Color **data, std::string **labels, int *size);
     static void x11ColorsSmall(Color **data, std::string **labels, int *size);
+    static void x11ColorsTiny(Color **data, std::string **labels, int *size);
 };

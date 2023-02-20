@@ -11,12 +11,14 @@ int main()
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     int *buf = (int *)malloc(2 * sizeof(int));
     int *recvbuf;
-    int *rcounts = (int *)malloc(size * sizeof(int));
-    int *displs = (int *)malloc(size * sizeof(int));
+    int *rcounts = nullptr;
+    int *displs = nullptr;
     int sendcount = 0;
     if (rank == 0)
     {
         recvbuf = (int *)malloc(2 * size * sizeof(int));
+        rcounts = (int *)malloc(size * sizeof(int));
+        displs = (int *)malloc(size * sizeof(int));
     }
 
     if (rank == size - 1)
@@ -28,13 +30,16 @@ int main()
         buf[sendcount++] = 10;
         buf[sendcount++] = 11;
     }
-    for (int i = 0; i < size; i++)
+    if (rank == 0)
     {
-        rcounts[i] = 2;
-        displs[i] = i * 2;
-        if (i == size - 1)
+        for (int i = 0; i < size; i++)
         {
-            rcounts[i] = 1;
+            rcounts[i] = 2;
+            displs[i] = i * 2;
+            if (i == size - 1)
+            {
+                rcounts[i] = 1;
+            }
         }
     }
 

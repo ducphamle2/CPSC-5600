@@ -250,3 +250,17 @@ void Color::x11ColorsSmall(Color **data, string **labels, int *size)
     *labels = names;
     *size = i;
 }
+
+void Color::x11ColorsTiny(Color **data, string **labels, int *size)
+{
+    const int MAX = 200;
+    auto *colors = new Color[MAX];
+    auto *names = new string[MAX];
+    int i = 0;
+    addX11(colors, names, i++, 0xF0F8FF, "Alice Blue");
+    addX11(colors, names, i++, 0xFAEBD7, "Antique White");
+    addX11(colors, names, i++, 0x663399, "Rebecca Purple");
+    *data = colors;
+    *labels = names;
+    *size = i;
+}

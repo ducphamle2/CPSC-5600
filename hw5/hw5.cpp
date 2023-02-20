@@ -11,7 +11,7 @@
 
 using namespace std;
 
-const int K = 6;
+const int K = 9;
 
 // declaration of html helper functions
 void html_cell(ofstream &f, const Color &c, const string &name);
@@ -36,7 +36,7 @@ int main()
     {
         // Set up some data using colors from X11
         int nColors;
-        Color::x11ColorsSmall(&colorList, &colorLabels, &nColors);
+        Color::x11Colors(&colorList, &colorLabels, &nColors);
         kMeans.fit(colorList, nColors);
     }
     else
