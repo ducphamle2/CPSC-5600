@@ -1,27 +1,63 @@
-#include <mpi.h>
-#include <stdio.h>
+#include <iostream>
+#include "mpi.h"
+using namespace std;
 
-int main(int argc, char **argv)
+int main()
 {
     int rank;
-    int buf;
-    const int root = 0;
-
-    MPI_Init(&argc, &argv);
+    int size;
+    MPI_Init(nullptr, nullptr);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    if (rank == root)
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    int *buf = (int *)malloc(2 * sizeof(int));
+    int *recvbuf;
+    int *rcounts = (int *)malloc(size * sizeof(int));
+    int *displs = (int *)malloc(size * sizeof(int));
+    int sendcount = 0;
+    if (rank == 0)
     {
-        buf = 999999;
+        recvbuf = (int *)malloc(2 * size * sizeof(int));
     }
 
-    printf("[%d]: Before Bcast, buf is %d\n", rank, buf);
+    if (rank == size - 1)
+    {
+        buf[sendcount++] = 9;
+    }
+    else
+    {
+        buf[sendcount++] = 10;
+        buf[sendcount++] = 11;
+    }
+    for (int i = 0; i < size; i++)
+    {
+        rcounts[i] = 2;
+        displs[i] = i * 2;
+        if (i == size - 1)
+        {
+            rcounts[i] = 1;
+        }
+    }
 
-    /* everyone calls bcast, data is taken from root and ends up in everyone's buf */
-    MPI_Bcast(&buf, 1, MPI_INT, root, MPI_COMM_WORLD);
+    for (int i = 0; i < sendcount; i++)
+    {
+        cout << "rank: " << rank << " buf: " << buf[i] << endl;
+    }
 
-    printf("[%d]: After Bcast, buf is %d\n", rank, buf);
+    MPI_Gatherv(buf, sendcount, MPI_UNSIGNED, recvbuf, rcounts, displs, MPI_UNSIGNED,
+                0, MPI_COMM_WORLD);
+
+    if (rank == 0)
+    {
+        cout << "Test rank 0" << endl;
+        for (int i = 0; i < 5; i++)
+        {
+            cout << recvbuf[i] << endl;
+        }
+        for (int i = 0; i < size; i++)
+        {
+            cout << "displ: " << displs[i] << endl;
+        }
+    }
 
     MPI_Finalize();
-    return 0;
 }
