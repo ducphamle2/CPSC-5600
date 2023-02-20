@@ -28,7 +28,7 @@ public:
     int rank = 0;
 
     // debugging for MPI, print out stuff
-    const bool VERBOSE = true; // set to true for debugging output
+    const bool VERBOSE = false; // set to true for debugging output
 #define V(stuff)             \
     if (VERBOSE)             \
     {                        \
@@ -136,16 +136,12 @@ public:
         int j = 0;                                           // index into recvbuf
         for (int bi = 0; bi < m; bi++)
         {
-            int esize = recvbuf[j++];
-            for (int ei = 0; ei < esize; ei++)
+            Element element = Element{};
+            for (int di = 0; di < d; di++)
             {
-                Element element = Element{};
-                for (int di = 0; di < d; di++)
-                {
-                    element[di] = recvbuf[j++];
-                }
-                partition[bi] = element;
+                element[di] = recvbuf[j++];
             }
+            partition[bi] = element;
         }
         elements = partition;
 
@@ -232,7 +228,7 @@ protected:
      */
     virtual void updateDistances()
     {
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < length_per_processes; i++)
         {
             V(cout << "distances for " << i << "("; for (int x = 0; x < d; x++) printf("%02x", elements[i][x]);)
             for (int j = 0; j < k; j++)
@@ -311,7 +307,7 @@ protected:
             clusters[j].elements.clear();
         }
         // for each element, put it in its closest cluster (updating the cluster's centroid as we go)
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < length_per_processes; i++)
         {
             int min = 0;
             // can parallel here because we are working on different clusters. They can work at the same time
