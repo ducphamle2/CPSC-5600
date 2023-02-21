@@ -24,11 +24,11 @@ public:
     typedef array<u_char, d> Element;
     class Cluster;
     typedef array<Cluster, k> Clusters; // define a cluster class to include all the things we need for a cluster. Has k clusters
-    const int MAX_FIT_STEPS = 300;
+    const int MAX_FIT_STEPS = 2;
     int rank = 0;
 
     // debugging for MPI, print out stuff
-    const bool VERBOSE = false; // set to true for debugging output
+    const bool VERBOSE = true; // set to true for debugging output
 #define V(stuff)             \
     if (VERBOSE)             \
     {                        \
@@ -82,11 +82,11 @@ public:
             updateDistances(); // step 2
             prior = clusters;
             updateClusters();
-            // mergeClusters();
-            mergeClusterElements(); // merge cluster element indexes
+            mergeClusters();
+            // mergeClusterElements(); // merge cluster element indexes
             bcastCentroids();
         }
-        // mergeClusterElements(); // merge cluster element indexes
+        mergeClusterElements();
     }
 
     virtual void scatterElements()
@@ -276,7 +276,8 @@ protected:
             for (int j = 1; j < k; j++)
                 if (dist[i][j] < dist[i][min])
                     min = j;
-            // accum(clusters[min].centroid, clusters[min].elements.size(), partition[i], 1);
+
+            accum(clusters[min].centroid, clusters[min].elements.size(), partition[i], 1);
             int trueElementIndex = i + rank * length_per_processes;
             if (rank == numProcs - 1)
             {
@@ -284,6 +285,85 @@ protected:
             }
             clusters[min].elements.push_back(trueElementIndex);
         }
+    }
+
+    virtual void mergeClusters()
+    {
+        // mergeClusterElements();
+        mergeCentroids();
+    }
+
+    // /**
+    //  * Merge the clusters to the root process by using Gatherv. We only need to merge the centroids value to the root process, and the root can avarage them again. Then we broadcast the centroids to others
+    //  */
+    virtual void mergeCentroids()
+    {
+        u_char *sendbuf = nullptr, *recvbuf = nullptr; // nullptr allows delete to work for anyone
+        int length = k * (d + 1);                      // since each centroid's size is fixed, we can safely assume that the displs & recvcounts are unchanged
+        sendbuf = new u_char[length];                  // each process loops through k clusters, so the send buf is k * d, where each centroid is an element of d dimensions. +1 here for the total element size of the cluster. recvbuf should be k * (d+1) * numProcs
+        int i = 0;
+        if (rank == RootProcess)
+        {
+            // has numProcs processes sending to the root
+            recvbuf = new u_char[numProcs * length];
+        }
+        for (int ki = 0; ki < k; ki++)
+        {
+            // cout << "cluster element size: " << clusters[ki].elements.size() << endl;
+            // printf("rank %d cluster [%d] element size: %d\n", rank, ki, int(clusters[ki].elements.size()));
+            sendbuf[i++] = u_char(clusters[ki].elements.size()); // we convert int to char, when we unmarshall we will need to convert back
+            for (int di = 0; di < d; di++)
+            {
+                sendbuf[i++] = clusters[ki].centroid[di];
+            }
+            // printf("cluster[%d] centroid: ", ki);
+            // for (int x = 0; x < d; x++)
+            //     printf(" %d", clusters[ki].centroid[x]);
+            // printf("\n");
+        }
+        // gather elements of clusters
+        MPI_Gather(sendbuf, i, MPI_UNSIGNED_CHAR, recvbuf, length, MPI_UNSIGNED_CHAR, RootProcess, MPI_COMM_WORLD);
+
+        // unmarshalling & reducing recvbuf
+        if (rank == RootProcess)
+        {
+            for (int index = 0; index < numProcs * length; index++)
+            {
+                printf("recvbuf[%d]: %d\n", index, recvbuf[index]);
+            }
+            int i = 0;
+            vector<int> clusterSize(k, 0);
+            // clear all centroids to reset everything
+            for (int j = 0; j < k; j++)
+            {
+                clusters[j].centroid = Element{};
+            }
+            for (int pi = 0; pi < numProcs; pi++)
+            {
+                for (int ki = 0; ki < k; ki++)
+                {
+                    printf("cluster %d proc cluster size: %d\n", ki, recvbuf[i]);
+                    int procClusterSize = int(recvbuf[i++]);
+                    Element element = Element{};
+                    for (int di = 0; di < d; di++)
+                    {
+                        element[di] = recvbuf[i++];
+                        printf("centroid %d element[%d]: %d\n", ki, di, element[di]);
+                    }
+                    printf("centroid %d cluster size: %d\n", ki, clusterSize[ki]);
+                    accum(clusters[ki].centroid, clusterSize[ki], element, procClusterSize);
+                    for (int di = 0; di < d; di++)
+                    {
+                        printf("centroid %d [%d]: %d\n", ki, di, clusters[ki].centroid[di]);
+                    }
+                    clusterSize[ki] += procClusterSize;
+                }
+            }
+            delete[] recvbuf;
+        }
+
+        // free temp arrays
+        delete[] sendbuf;
     }
 
     virtual void bcastCentroids()
@@ -369,7 +449,6 @@ protected:
                 clusters[j].elements.clear();
             }
             int i = 0;
-            int sizeCount = 0;
             for (int pi = 0; pi < numProcs; pi++)
             {
                 for (int ki = 0; ki < k; ki++)
@@ -378,9 +457,8 @@ protected:
                     {
                         if (recvbuf[i] != -1)
                         {
-                            sizeCount++;
                             // printf("recvbuf to push back with i: %d and value: %d\n", i, recvbuf[i]);
-                            accum(clusters[ki].centroid, clusters[ki].elements.size(), elements[recvbuf[i]], 1);
+                            // accum(clusters[ki].centroid, clusters[ki].elements.size(), elements[recvbuf[i]], 1);
                             clusters[ki].elements.push_back(recvbuf[i]);
                         }
                         i++;

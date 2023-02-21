@@ -20,10 +20,10 @@ public:
     typedef std::array<u_char, d> Element;
     class Cluster;
     typedef std::array<Cluster, k> Clusters; // define a cluster class to include all the things we need for a cluster. Has k clusters
-    const int MAX_FIT_STEPS = 300;
+    const int MAX_FIT_STEPS = 2;
 
     // debugging for MPI, print out stuff
-    const bool VERBOSE = false; // set to true for debugging output
+    const bool VERBOSE = true; // set to true for debugging output
 #define V(stuff)             \
     if (VERBOSE)             \
     {                        \
