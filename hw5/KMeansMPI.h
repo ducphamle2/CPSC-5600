@@ -64,14 +64,14 @@ public:
     {
         rank = _rank;
         MPI_Comm_size(MPI_COMM_WORLD, &numProcs);               // collect number of processes so we can split into chunks to handle distances
-        processLengthPerProcess();                              // calculate length per process
         MPI_Bcast(&n, 1, MPI_INT, RootProcess, MPI_COMM_WORLD); // broadcast data & seed clusters to other processes
+        processLengthPerProcess();                              // calculate length per process
         scatterElements();
         if (rank == RootProcess)
         {
             reseedClustersFixed(); // find random values to get started, step 1
         }
-        bcastSeeds(rank);                  // need a separate function to broadcast centroids after re-seeding
+        bcastCentroids();                  // need a separate function to broadcast centroids after re-seeding
         dist.resize(length_per_processes); // since when initializing, we dont know the size of the list of colors. This function is used to resize the 2D array based on n
         Clusters prior = clusters;
         prior[0].centroid[0]++; // just to make it different the first time
@@ -82,28 +82,29 @@ public:
             updateDistances(); // step 2
             prior = clusters;
             updateClusters();
-            mergeClusters();
+            // mergeClusters();
+            mergeClusterElements(); // merge cluster element indexes
             bcastCentroids();
         }
+        // mergeClusterElements(); // merge cluster element indexes
     }
 
     virtual void scatterElements()
     {
-        // cout << "before scattering" << endl;
-        // for (int bi = 0; bi < n; bi++)
-        // {
-        //     printf("element[%d]: ", bi);
-        //     for (int x = 0; x < d; x++)
-        //         printf(" %d", elements[bi][x]);
-        //     printf("\n");
-        // }
         u_char *sendbuf = nullptr, *recvbuf = nullptr; // nullptr allows delete to work for anyone
         int *sendcounts = nullptr, *displs = nullptr;
         int m = 0; // size of partition
-        Element *partition = nullptr;
+        Element *_partition = nullptr;
 
         if (rank == RootProcess)
         {
+            // cout << "before scattering" << endl;
+            // for (int bi = 0; bi < n; bi++)
+            // {
+            //     for (int x = 0; x < d; x++)
+            //         printf(" rank %d - %d", rank, elements[bi][x]);
+            //     printf("\n");
+            // }
             // marshal data into sendbuf and set up sending side of message (RootProcess only)
             sendbuf = new u_char[n * d]; // max size
             sendcounts = new int[numProcs];
@@ -139,8 +140,8 @@ public:
                      RootProcess, MPI_COMM_WORLD);
 
         // unmarshal data from recvbuf into this->partion
-        partition = (Element *)malloc(m * d * sizeof(u_char)); // calls default ctor for each
-        int j = 0;                                             // index into recvbuf
+        _partition = (Element *)malloc(m * d * sizeof(u_char)); // calls default ctor for each
+        int j = 0;                                              // index into recvbuf
         for (int bi = 0; bi < m; bi++)
         {
             Element element = Element{};
@@ -148,9 +149,19 @@ public:
             {
                 element[di] = recvbuf[j++];
             }
-            partition[bi] = element;
+            _partition[bi] = element;
         }
-        elements = partition;
+        // elements = partition;
+        partition = _partition;
+
+        // free temp arrays
+        if (rank == RootProcess)
+        {
+            delete[] sendbuf;
+            delete[] sendcounts;
+            delete[] displs;
+        }
+        delete[] recvbuf;
 
         // cout << "after scattering" << endl;
         // for (int bi = 0; bi < m; bi++)
@@ -158,38 +169,10 @@ public:
         //     // printf("element[%d]: ", bi);
         //     for (int x = 0; x < d; x++)
         //     {
-        //         printf(" %d", elements[bi][x]);
+        //         printf(" rank %d - %d", rank, elements[bi][x]);
         //     }
         //     printf("\n");
         // }
-
-        // free temp arrays
-        delete[] sendbuf;
-        delete[] sendcounts;
-        delete[] displs;
-        delete[] recvbuf;
-    }
-
-    virtual void bcastSeeds(int rank)
-    {
-        int *buf = (int *)malloc(k * sizeof(int));
-        if (rank == RootProcess)
-        {
-            for (int i = 0; i < k; i++)
-            {
-                buf[i] = seeds[i];
-            }
-        }
-        MPI_Bcast(buf, k, MPI_INT, RootProcess, MPI_COMM_WORLD);
-        if (rank != RootProcess)
-        {
-            for (int i = 0; i < k; i++)
-            {
-                clusters[i].centroid = elements[buf[i]];
-                clusters[i].elements.clear();
-            }
-        }
-        delete[] buf;
     }
 
     /**
@@ -210,12 +193,13 @@ public:
     };
 
 protected:
-    const Element *elements = nullptr; // set of elements to classify into k categories (supplied to latest call to fit())
-    int n = 0;                         // number of elements in this->elements
-    Clusters clusters;                 // k clusters resulting from latest call to fit()
-    vector<array<double, k>> dist;     // dist[i][j] is the distance from elements[i] to clusters[j].centroid
-    vector<int> seeds;                 // seed used to reseed the centroids
-    int numProcs = 0;                  // number of processes
+    const Element *elements = nullptr;  // set of elements to classify into k categories (supplied to latest call to fit())
+    const Element *partition = nullptr; // set of elements to classify into k categories (supplied to latest call to fit())
+    int n = 0;                          // number of elements in this->elements
+    Clusters clusters;                  // k clusters resulting from latest call to fit()
+    vector<array<double, k>> dist;      // dist[i][j] is the distance from elements[i] to clusters[j].centroid
+    vector<int> seeds;                  // seed used to reseed the centroids
+    int numProcs = 0;                   // number of processes
     int length_per_processes = 0;
 
     /**
@@ -262,10 +246,10 @@ protected:
     {
         for (int i = 0; i < length_per_processes; i++)
         {
-            V(cout << "distances for " << i << "("; for (int x = 0; x < d; x++) printf("%02x ", elements[i][x]);)
+            V(cout << "distances for " << i << "("; for (int x = 0; x < d; x++) printf("%02x ", partition[i][x]);)
             for (int j = 0; j < k; j++)
             {
-                dist[i][j] = distance(clusters[j].centroid, elements[i]);
+                dist[i][j] = distance(clusters[j].centroid, partition[i]);
                 V(cout << " " << dist[i][j];)
             }
             V(cout << endl;)
@@ -292,97 +276,20 @@ protected:
             for (int j = 1; j < k; j++)
                 if (dist[i][j] < dist[i][min])
                     min = j;
-            accum(clusters[min].centroid, clusters[min].elements.size(), elements[i], 1);
-            clusters[min].elements.push_back(i);
-        }
-    }
-
-    // /**
-    //  * Merge the clusters to the root process by using Gatherv. We only need to merge the centroids value to the root process, and the root can avarage them again. Then we broadcast the centroids to others
-    //  */
-    virtual void mergeClusters()
-    {
-        u_char *sendbuf = nullptr, *recvbuf = nullptr; // nullptr allows delete to work for anyone
-        int *recvcounts = nullptr, *displs = nullptr;
-        int length = k * (d + 1);     // since each centroid's size is fixed, we can safely assume that the displs & recvcounts are unchanged
-        sendbuf = new u_char[length]; // each process loops through k clusters, so the send buf is k * d, where each centroid is an element of d dimensions. +1 here for the total element size of the cluster. recvbuf should be k * (d+1) * numProcs
-        int i = 0;
-        if (rank == RootProcess)
-        {
-            // has numProcs processes sending to the root
-            recvbuf = new u_char[numProcs * length];
-            recvcounts = new int[numProcs];
-            displs = new int[numProcs];
-            for (int pi = 0; pi < numProcs; pi++)
+            // accum(clusters[min].centroid, clusters[min].elements.size(), partition[i], 1);
+            int trueElementIndex = i + rank * length_per_processes;
+            if (rank == numProcs - 1)
             {
-                displs[i] = i * length;
-                recvcounts[pi] = length;
+                trueElementIndex = i + rank * (n / numProcs); // reset back to only n / numProcs because the last process does not count towards the piece
             }
+            clusters[min].elements.push_back(trueElementIndex);
         }
-        for (int ki = 0; ki < k; ki++)
-        {
-            // cout << "cluster element size: " << clusters[ki].elements.size() << endl;
-            // printf("cluster element size in u_char: %c\n", u_char(clusters[ki].elements.size()));
-            sendbuf[i++] = u_char(clusters[ki].elements.size()); // we convert int to char, when we unmarshall we will need to convert back
-            for (int di = 0; di < d; di++)
-            {
-                sendbuf[i++] = clusters[ki].centroid[di];
-            }
-            // printf("cluster[%d] centroid: ", ki);
-            // for (int x = 0; x < d; x++)
-            //     printf(" %d", clusters[ki].centroid[x]);
-            // printf("\n");
-        }
-        // gather elements of clusters
-        MPI_Gatherv(sendbuf, i, MPI_UNSIGNED_CHAR, recvbuf, recvcounts, displs, MPI_UNSIGNED_CHAR, RootProcess, MPI_COMM_WORLD);
-
-        // for (int index = 0; index < numProcs * length; index++)
-        // {
-        //     printf("recvbuf[%d]: %d\n", index, recvbuf[index]);
-        // }
-
-        // unmarshalling & reducing recvbuf
-        if (rank == RootProcess)
-        {
-            // printf("num procs: %d\n", numProcs);
-            // printf("k clusters: %d\n", k);
-            // int i = 0;
-            for (int ki = 0; ki < k; ki++)
-            {
-                int reducedClusterSize = 0;
-                for (int pi = 0; pi < numProcs; pi++)
-                {
-                    int i = (ki * (d + 1)) + (k * pi); // each i is a jump from centroid; k * pi helps jump from cluster k of pi to cluster k of pj; ki * (d+1) gets correct size of cluster ki of process pi
-                    // printf("index i: %d\n", i);
-                    int procClusterSize = int(recvbuf[i++]); // casting from u_char to int because we know each first char of a cluster is the element size
-                    // printf("process cluster size: %d\n", procClusterSize);
-                    Element element = Element{};
-                    for (int di = 0; di < d; di++)
-                    {
-                        element[di] = recvbuf[i++];
-                    }
-                    // we initialize the centroid for each cluster using the centroid of the first process. Other processes's centroids are accumulated
-                    if (pi == 0)
-                        clusters[ki].centroid = element;
-                    else
-                        accum(clusters[ki].centroid, reducedClusterSize, element, procClusterSize); // TODO: size of centroid & element should be collected from processes (their actual centroid sizes!!)
-                    // accumulate total cluster size reduced from different processes
-                    reducedClusterSize += procClusterSize;
-                }
-            }
-        }
-
-        // free temp arrays
-        delete[] sendbuf;
-        delete[] recvcounts;
-        delete[] displs;
-        delete[] recvbuf;
     }
 
     virtual void bcastCentroids()
     {
-        u_char *buf = new u_char[k * d];
-        int i = 0;
+        int count = k * d;
+        u_char *buf = new u_char[count];
         if (rank == RootProcess)
         {
             int i = 0;
@@ -394,7 +301,7 @@ protected:
                 }
             }
         }
-        MPI_Bcast(buf, i, MPI_UNSIGNED_CHAR, RootProcess, MPI_COMM_WORLD);
+        MPI_Bcast(buf, count, MPI_UNSIGNED_CHAR, RootProcess, MPI_COMM_WORLD);
         if (rank != RootProcess)
         {
             int i = 0;
@@ -409,6 +316,92 @@ protected:
             }
         }
         delete[] buf;
+    }
+
+    // /**
+    //  * Merge the elements to display them after finishing k-means. We only need to merge in the last step because n-1 steps prior all elements are discarded in updateClusters()
+    //  */
+    virtual void mergeClusterElements()
+    {
+        int *sendbuf = nullptr, *recvbuf = nullptr; // nullptr allows delete to work for anyone
+        int *recvcounts = nullptr, *displs = nullptr;
+        int length = k * n;
+        sendbuf = new int[length]; // we gather all the cluster element sizes & send to the root first
+        int i = 0;
+        if (rank == RootProcess)
+        {
+            // has numProcs processes sending to the root
+            recvbuf = new int[numProcs * length];
+            recvcounts = new int[numProcs];
+            displs = new int[numProcs];
+            for (int pi = 0; pi < numProcs; pi++)
+            {
+                displs[pi] = pi * length;
+                recvcounts[pi] = length;
+            }
+        }
+        int totalElementSize = 0;
+        for (int ki = 0; ki < k; ki++)
+        {
+            int size = clusters[ki].elements.size();
+            totalElementSize += size;
+            for (int ei = 0; ei < size; ei++)
+            {
+                sendbuf[i++] = clusters[ki].elements[ei];
+            }
+            for (int ei = size; ei < n; ei++)
+            {
+                sendbuf[i++] = -1; // extra data to let all clusters have the same element indexes.
+            }
+        }
+        // printf("rank %d total element size: %d\n", rank, totalElementSize);
+        // for (int index = 0; index < i; index++)
+        // {
+        //     printf("mergeelement rank %d - sendbuf[%d]: %d\n", rank, index, sendbuf[index]);
+        // }
+        MPI_Gatherv(sendbuf, length, MPI_UNSIGNED, recvbuf, recvcounts, displs, MPI_UNSIGNED, RootProcess, MPI_COMM_WORLD);
+        if (rank == RootProcess)
+        {
+
+            // clear all elements to reset everything
+            for (int j = 0; j < k; j++)
+            {
+                clusters[j].elements.clear();
+            }
+            int i = 0;
+            int sizeCount = 0;
+            for (int pi = 0; pi < numProcs; pi++)
+            {
+                for (int ki = 0; ki < k; ki++)
+                {
+                    for (int ni = 0; ni < n; ni++)
+                    {
+                        if (recvbuf[i] != -1)
+                        {
+                            sizeCount++;
+                            // printf("recvbuf to push back with i: %d and value: %d\n", i, recvbuf[i]);
+                            accum(clusters[ki].centroid, clusters[ki].elements.size(), elements[recvbuf[i]], 1);
+                            clusters[ki].elements.push_back(recvbuf[i]);
+                        }
+                        i++;
+                    }
+                }
+            }
+            // printf("size count: %d\n", i);
+            // for (int i = 0; i < k; i++)
+            // {
+            //     printf("element size final: %d\n", int(clusters[i].elements.size()));
+            // }
+        }
+
+        // free temp arrays
+        delete[] sendbuf;
+        if (rank == RootProcess)
+        {
+            delete[] recvcounts;
+            delete[] displs;
+            delete[] recvbuf;
+        }
     }
 
     /**
