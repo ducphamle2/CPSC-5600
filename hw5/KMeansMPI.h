@@ -10,6 +10,8 @@
 #include <iostream>
 #include <set>
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include "mpi.h"
 using namespace std;
 
@@ -66,10 +68,11 @@ public:
         MPI_Comm_size(MPI_COMM_WORLD, &numProcs);               // collect number of processes so we can split into chunks to handle distances
         MPI_Bcast(&n, 1, MPI_INT, RootProcess, MPI_COMM_WORLD); // broadcast data & seed clusters to other processes
         processLengthPerProcess();                              // calculate length per process
+        partition = (Element *)malloc(length_per_processes * d * sizeof(u_char));
         scatterElements();
         if (rank == RootProcess)
         {
-            reseedClustersFixed(); // find random values to get started, step 1
+            reseedClusters(); // find random values to get started, step 1
         }
         bcastCentroids();                  // need a separate function to broadcast centroids after re-seeding
         dist.resize(length_per_processes); // since when initializing, we dont know the size of the list of colors. This function is used to resize the 2D array based on n
@@ -86,7 +89,7 @@ public:
             mergeClusterElements(); // merge cluster element indexes
             bcastCentroids();
         }
-        // mergeClusterElements(); // merge cluster element indexes
+        free(partition);
     }
 
     virtual void scatterElements()
@@ -94,7 +97,6 @@ public:
         u_char *sendbuf = nullptr, *recvbuf = nullptr; // nullptr allows delete to work for anyone
         int *sendcounts = nullptr, *displs = nullptr;
         int m = 0; // size of partition
-        Element *_partition = nullptr;
 
         if (rank == RootProcess)
         {
@@ -140,19 +142,18 @@ public:
                      RootProcess, MPI_COMM_WORLD);
 
         // unmarshal data from recvbuf into this->partion
-        _partition = (Element *)malloc(m * d * sizeof(u_char)); // calls default ctor for each
-        int j = 0;                                              // index into recvbuf
+        int j = 0; // index into recvbuf
         for (int bi = 0; bi < m; bi++)
         {
             Element element = Element{};
+            // array<u_char, d> element;
             for (int di = 0; di < d; di++)
             {
                 element[di] = recvbuf[j++];
             }
-            _partition[bi] = element;
+            partition[bi] = element;
         }
         // elements = partition;
-        partition = _partition;
 
         // free temp arrays
         if (rank == RootProcess)
@@ -193,13 +194,13 @@ public:
     };
 
 protected:
-    const Element *elements = nullptr;  // set of elements to classify into k categories (supplied to latest call to fit())
-    const Element *partition = nullptr; // set of elements to classify into k categories (supplied to latest call to fit())
-    int n = 0;                          // number of elements in this->elements
-    Clusters clusters;                  // k clusters resulting from latest call to fit()
-    vector<array<double, k>> dist;      // dist[i][j] is the distance from elements[i] to clusters[j].centroid
-    vector<int> seeds;                  // seed used to reseed the centroids
-    int numProcs = 0;                   // number of processes
+    const Element *elements = nullptr; // set of elements to classify into k categories (supplied to latest call to fit())
+    Element *partition = nullptr;      // set of elements to classify into k categories (supplied to latest call to fit())
+    int n = 0;                         // number of elements in this->elements
+    Clusters clusters;                 // k clusters resulting from latest call to fit()
+    vector<array<double, k>> dist;     // dist[i][j] is the distance from elements[i] to clusters[j].centroid
+    vector<int> seeds;                 // seed used to reseed the centroids
+    int numProcs = 0;                  // number of processes
     int length_per_processes = 0;
 
     /**
