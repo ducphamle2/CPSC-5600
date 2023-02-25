@@ -11,7 +11,7 @@
 
 using namespace std;
 
-const int K = 10;
+const int K = 9;
 
 // declaration of html helper functions
 void html_cell(ofstream &f, const Color &c, const string &name);
