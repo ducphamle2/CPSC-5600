@@ -72,25 +72,33 @@ public:
         MPI_Comm_size(MPI_COMM_WORLD, &numProcs);               // collect number of processes so we can split into chunks to handle distances
         MPI_Bcast(&n, 1, MPI_INT, RootProcess, MPI_COMM_WORLD); // broadcast data & seed clusters to other processes
         processLengthPerProcess();                              // calculate length per process
+        // cout << "after processing length per processes" << endl;
         partition = (Element *)malloc(length_per_processes * d * sizeof(u_char));
         scatterElements(); // scatter elements to individual processes
+        // cout << "after scattering elements" << endl;
         if (rank == RootProcess)
         {
-            reseedClusters(); // only the root can initialize the cluster seeds because hes has the full element list
+            reseedClustersFixed(); // only the root can initialize the cluster seeds because hes has the full element list
         }
+        // cout << "after reseeding clusters" << endl;
         bcastCentroids();                  // a separate function to broadcast centroids after re-seeding
         dist.resize(length_per_processes); // since when initializing, we dont know the size of the list of colors. This function is used to resize the 2D array based on n
         Clusters prior = clusters;
         prior[0].centroid[0]++; // just to make it different the first time
         int generation = 0;
         // step 4
+        // cout << "after broadcasting centroids" << endl;
         while (generation++ < MAX_FIT_STEPS && prior != clusters)
         {
             updateDistances(); // step 2
+            // cout << "after updating the distances" << endl;
             prior = clusters;
             updateClusters();
-            mergeClusters();  // merge cluster element indexes & calculate the new centroids
+            // cout << "after updating the clusters" << endl;
+            mergeClusters(); // merge cluster element indexes & calculate the new centroids
+            // cout << "after merging the clusters" << endl;
             bcastCentroids(); // broadcast the new centroids to all processes
+            // cout << "after bcasting the centroids" << endl;
         }
         free(partition);
     }
@@ -214,21 +222,21 @@ protected:
         }
     }
 
-    // /**
-    //  * Get the initial cluster centroids.
-    //  * Default implementation here is to just pick k elements at random from the element
-    //  * set
-    //  * @return list of clusters made by using k random elements as the initial centroids
-    //  */
-    // virtual void reseedClustersFixed()
-    // {
-    //     for (int i = 0; i < k; i++)
-    //     {
-    //         seeds.push_back(i);
-    //         clusters[i].centroid = elements[seeds[i]]; // randomly assign an element at index random to be centroid
-    //         clusters[i].elements.clear();              // reset all elements to get new ones for this round
-    //     }
-    // }
+    /**
+     * Get the initial cluster centroids.
+     * Default implementation here is to just pick k elements at random from the element
+     * set
+     * @return list of clusters made by using k random elements as the initial centroids
+     */
+    virtual void reseedClustersFixed()
+    {
+        for (int i = 0; i < k; i++)
+        {
+            seeds.push_back(i);
+            clusters[i].centroid = elements[seeds[i]]; // randomly assign an element at index random to be centroid
+            clusters[i].elements.clear();              // reset all elements to get new ones for this round
+        }
+    }
 
     /**
      * Calculate the distance from each element to each centroid.

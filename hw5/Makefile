@@ -1,10 +1,13 @@
 CPPFLAGS = -std=c++20 -Wall -Werror -pedantic -ggdb
-PROGRAMS = kmean_color_test hw5 test
+PROGRAMS = kmean_color_test hw5 extra-credit
 
 all : $(PROGRAMS)
 
 Color.o : Color.cpp Color.h
 	mpic++ $(CPPFLAGS) $< -c -o $@
+
+MnistKmeans.o : Mnist.cpp Mnist.h
+	mpic++ $(CPPFLAGS) $< -c -o $@ -I /usr/local/include/opencv4 -lopencv_core -lopencv_videoio -lopencv_highgui -lopencv_imgproc
 
 kmean_color_test.o : kmean_color_test.cpp Color.h ColorKMeans.h KMeans.h
 	mpic++ $(CPPFLAGS) $< -c -o $@
@@ -23,6 +26,15 @@ hw5 : hw5.o Color.o
 
 test : test.o
 	mpic++ $(CPPFLAGS) test.o -o $@
+
+read-mnist: read-mnist.cpp
+	g++ $(CPPFLAGS) $< -o $@ -I /usr/local/include/opencv4 -lopencv_core -lopencv_videoio -lopencv_highgui -lopencv_imgproc
+
+extra-credit.o: extra-credit.cpp Mnist.h MnistKmeans.h KMeansMPI.h KMeans.h
+	mpic++ $(CPPFLAGS) $< -c -o $@ -I /usr/local/include/opencv4 -lopencv_core -lopencv_videoio -lopencv_highgui -lopencv_imgproc
+
+extra-credit: extra-credit.o MnistKmeans.o
+	mpic++ $(CPPFLAGS) extra-credit.o MnistKmeans.o -o $@ -I /usr/local/include/opencv4 -lopencv_core -lopencv_videoio -lopencv_highgui -lopencv_imgproc
 
 run_hw5 : hw5
 	mpirun -n 2 ./hw5
