@@ -76,7 +76,7 @@ public:
         scatterElements(); // scatter elements to individual processes
         if (rank == RootProcess)
         {
-            reseedClustersFixed(); // only the root can initialize the cluster seeds because hes has the full element list
+            reseedClusters(); // only the root can initialize the cluster seeds because hes has the full element list
         }
         bcastCentroids();                  // a separate function to broadcast centroids after re-seeding
         dist.resize(length_per_processes); // since when initializing, we dont know the size of the list of colors. This function is used to resize the 2D array based on n
@@ -209,22 +209,6 @@ protected:
         sample(candidates.begin(), candidates.end(), back_inserter(seeds), k, random);
         for (int i = 0; i < k; i++)
         {
-            clusters[i].centroid = elements[seeds[i]]; // randomly assign an element at index random to be centroid
-            clusters[i].elements.clear();              // reset all elements to get new ones for this round
-        }
-    }
-
-    // /**
-    //  * Get the initial cluster centroids.
-    //  * Default implementation here is to just pick k elements at random from the element
-    //  * set
-    //  * @return list of clusters made by using k random elements as the initial centroids
-    //  */
-    virtual void reseedClustersFixed()
-    {
-        for (int i = 0; i < k; i++)
-        {
-            seeds.push_back(i);
             clusters[i].centroid = elements[seeds[i]]; // randomly assign an element at index random to be centroid
             clusters[i].elements.clear();              // reset all elements to get new ones for this round
         }

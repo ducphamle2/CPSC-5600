@@ -1,0 +1,32 @@
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:realloc
+   fun:hwloc__add_info
+   fun:hwloc__xml_import_cpukind
+   fun:hwloc_look_xml
+   fun:hwloc_discover
+   fun:hwloc_topology_load
+   fun:MPII_hwtopo_init
+   fun:MPII_Init_thread
+   fun:MPIR_Init_impl
+   fun:PMPI_Init
+   fun:main
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:realloc
+   fun:hwloc__add_info
+   fun:hwloc__xml_import_cpukind
+   fun:hwloc_look_xml
+   fun:hwloc_discover
+   fun:hwloc_topology_load
+   fun:MPII_hwtopo_init
+   fun:MPII_Init_thread
+   fun:MPIR_Init_impl
+   fun:PMPI_Init
+   fun:main
+}
