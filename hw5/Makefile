@@ -1,4 +1,4 @@
-CPPFLAGS = -std=c++20 -Wall -Werror -pedantic -ggdb
+CPPFLAGS = -std=c++20 -Wall -Werror -pedantic -ggdb -pthread
 PROGRAMS = kmean_color_test hw5 extra-credit
 
 all : $(PROGRAMS)

@@ -91,6 +91,7 @@ int main()
 
     // Also report as a visualization in html for a browser to display
     delete[] images;
+    delete[] imageLabels;
 
     MPI_Finalize();
     return 0;

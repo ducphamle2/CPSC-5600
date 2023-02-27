@@ -7,10 +7,67 @@
 #include "Mnist.h"
 #include <utility>
 #include <fstream>
+#include "ThreadGroup.h"
 
 using namespace std;
 
-const int N = 1500; // this value limit the number of images and labels we want to process. Currently the algorithm can handle a limited number of images (lower than 1 << 11)
+const int N = 1 << 10; // this value limit the number of images and labels we want to process. Currently the algorithm can handle a limited number of images (works accurately with N <= 1 << 10. With N larger it seems that the program takes forever to finish)
+const int N_THREADS = 4;
+
+struct ShareData
+{
+    const array<u_char, 784> data; /// original data array to calculate prefix sum
+    int length;                    /// the size of the data array
+    double distance[N_THREADS];    // list of calculated distances from the threads
+
+    /**
+     * ShareData - constructor
+     *
+     * @param data - original data array
+     * @param length - size of the data array
+     */
+    ShareData(array<u_char, 784> data, int length)
+        : data(data), length(length)
+    {
+        for (int i = 0; i < N_THREADS; i++)
+        {
+            distance[i] = 0;
+        }
+    }
+};
+
+/**
+ * @class DistanceThread - use thread group to calculate distance in parallel
+ */
+class DistanceThread
+{
+public:
+    /**
+     * ()-operator - a function that is called when we start the thread
+     *
+     * @param id - thread id number
+     * @param sharedData - arbitrary data. Its data type is void * to disable compiler type checking. In our case, this should be ShareData struct
+     */
+    void operator()(int id, void *sharedData, void *other)
+    {
+        ShareData *ourData = (ShareData *)sharedData;
+        ShareData *otherData = (ShareData *)other;
+        // each thread handles a piece of the data array
+        int piece = ourData->length / N_THREADS;
+        // the first thread starts at 0 til the end of the piece, the 2nd thread starts at the next pieice and so on.
+        int start = id * piece;
+        // if id is not final thread, then move to the end of piece by adding 1, else end is already at the last element of data
+        int end = id != N_THREADS - 1 ? (id + 1) * piece : ourData->length;
+        double distance = 0.0;
+        for (int i = start; i < end; i++)
+        {
+            // we encode all the values in the data array to prepare for accumulation
+            double tmp = ourData->data[i] - otherData->data[i];
+            distance += tmp * tmp;
+        }
+        ourData->distance[id] = distance;
+    }
+};
 
 Mnist::Mnist()
 {
@@ -37,21 +94,31 @@ Mnist::Mnist(u_char *_image)
 double Mnist::euclidDistance(const Mnist &other) const
 {
     double distance = 0;
-    if (int(image.size()) != int(other.image.size()))
+    int length = int(image.size());
+    if (length != int(other.image.size()))
     {
         throw runtime_error("Invalid image size");
     }
-    for (int i = 0; i < int(image.size()); i++)
+
+    // initialize our shared data
+    ShareData *ourData = new ShareData(image, length);
+    ShareData *otherData = new ShareData(other.image, length);
+
+    // create a thread group to calculate the euclid distance in parallel. TODO: For some reason, adding threads makes the program run slower than using 1 thread. Why?
+    ThreadGroup<DistanceThread> distancesCalculator;
+    for (int t = 0; t < N_THREADS; t++)
     {
-        // if both are zeroes then we can skip to slightly improve the performance.
-        if (image[i] == 0 && other.image[i] == 0)
-            continue;
-        else
-        {
-            double tmp = image[i] - other.image[i];
-            distance += tmp * tmp;
-        }
+        distancesCalculator.createThread(t, ourData, otherData);
     }
+    distancesCalculator.waitForAll();
+
+    for (int i = 0; i < N_THREADS; i++)
+    {
+        // printf("distance[%d]: %.2f\n", i, ourData->distance[i]);
+        distance += ourData->distance[i];
+    }
+    delete[] ourData;
+    delete[] otherData;
     return sqrt(distance);
 }
 
