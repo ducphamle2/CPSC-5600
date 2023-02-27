@@ -1,6 +1,6 @@
 /**
- * @file ColorKMeansMPI.cpp - implementation code for ColorKMeansMPI class
- * @author Kevin Lundeen
+ * @file extra-credit.cpp - implementation code to do clustering on the Mnist dataset
+ * @author Le Duc Pham
  * @see "Seattle University, CPSC5600, Winter 2023"
  */
 #include <iostream>
@@ -8,8 +8,8 @@
 #include <vector>
 #include "MnistKmeans.h"
 #include "mpi.h"
-#include <opencv2/core.hpp>
-#include <opencv2/opencv.hpp>
+// #include <opencv2/core.hpp>
+// #include <opencv2/opencv.hpp>
 
 using namespace std;
 
@@ -25,25 +25,14 @@ int main()
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    // // Set up k-means
+    // Set up k-means
     MnistKmeans<K> kMeans;
 
     int nImages, nDimensions;
     if (rank == 0)
     {
-        // Set up some data using colors from X11
+        // Set up some data from the mnist dataset
         Mnist::images(&images, &imageLabels, &nImages, &nDimensions);
-        // cout << "in here" << endl;
-        // cout << "number of images: " << nImages << endl;
-        // for (int i = 0; i < nImages; i++)
-        // {
-        //     printf("image[%d]\n", i);
-        //     for (int j = 0; j < nDimensions; j++)
-        //     {
-        //         printf("%d ", images[i].image[j]);
-        //     }
-        //     printf("\n");
-        // }
         kMeans.fit(images, nImages);
     }
     else
@@ -55,8 +44,8 @@ int main()
 
     // get the result
     MnistKmeans<K>::Clusters clusters = kMeans.getClusters();
-    cv::Mat imageChunks, finalImagesDisplay;
-    std::vector<cv::Mat> listImages;
+    // cv::Mat imageChunks, finalImagesDisplay;
+    // std::vector<cv::Mat> listImages;
 
     // Report the result to console
     if (rank == RootProcess)
