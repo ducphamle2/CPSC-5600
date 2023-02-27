@@ -42,7 +42,7 @@ run_hw5 : hw5
 	mpirun -n 2 ./hw5
 
 valgrind : hw5
-	mpirun -n 2 valgrind -s --leak-check=full --show-leak-kinds=all --suppressions=valgrind.supp --gen-suppressions=all ./hw5
+	mpirun -n 2 valgrind ./hw5
 
 bigger_test : hw5
 	mpirun -n 10 ./hw5
