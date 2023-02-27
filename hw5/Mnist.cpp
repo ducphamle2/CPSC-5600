@@ -141,7 +141,7 @@ void read_mnist_images(string image_path, int &number_of_images, int &n_rows, in
             // read image pixel
             u_char *image = new u_char[n_rows * n_cols];
             imageFile.read((char *)image, image_size);
-            images[i] = Mnist(image, image_size);
+            images[i] = Mnist(image);
         }
     }
     else
