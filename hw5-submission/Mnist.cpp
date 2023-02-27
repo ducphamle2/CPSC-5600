@@ -14,6 +14,10 @@ using namespace std;
 const int N = 1 << 10; // this value limit the number of images and labels we want to process. Currently the algorithm can handle a limited number of images (works accurately with N <= 1 << 10. With N larger it seems that the program takes forever to finish)
 const int N_THREADS = 4;
 
+/**
+ * This data structure is used to calculate the euclid distance in parallel.
+ * Each thread shares the same data array, but different in the processing indexes.
+ */
 struct ShareData
 {
     const array<u_char, 784> data; /// original data array to calculate prefix sum
