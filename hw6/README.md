@@ -1,0 +1,1 @@
+1. NVIDIA card enabled server: ssh dpham6@csp239.cslab.seattleu.edu. Need VPN if you're not in the Seattleu network
