@@ -23,57 +23,64 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <cooperative_groups.h>
 using namespace std;
+using namespace cooperative_groups; // or...
+namespace cg = cooperative_groups;
 
-const int N = 1 << 4;
-const int MAX_BLOCK_SIZE = N; // n threads
+const int N = 1 << 15;
+const int MAX_BLOCK_SIZE = 1024;        // n threads
+const int MAX_BLOCK_SIZE_ORIGINAL = 16; // n threads
 
-// __global__ void allreduce(float *data)
-// {
-//     __shared__ float local[MAX_BLOCK_SIZE]; // 10x faster at least than global memory via data[]
-//     int gindex = threadIdx.x;
-//     int index = gindex;
-//     local[index] = data[gindex];
-// #if __CUDA_ARCH__ >= 200
-//     printf("global index aka thread id: %d \n", gindex);
-//     printf("thread %d local index: %.2f \n", threadIdx.x, local[index]);
-// #endif
-//     for (int stride = 1; stride < blockDim.x; stride *= 2)
-//     {
-// #if __CUDA_ARCH__ >= 200
-//         printf("thread %d stride %d \n", threadIdx.x, stride);
-// #endif
-//         __syncthreads(); // wait for my writing partner to put his value in local before reading it
-//         int source = (index - stride) % blockDim.x;
-//         float addend = local[source];
-// #if __CUDA_ARCH__ >= 200
-//         printf("thread %d source %d \n", threadIdx.x, source);
-//         printf("thread %d addend %.2f \n", threadIdx.x, addend);
-
-// #endif
-
-//         __syncthreads(); // wait for my reading partner to pull her value from local before updating it
-//         local[index] += addend;
-//     }
-//     data[gindex] = local[index];
-// }
-
-__global__ void scan(float *data)
+__global__ void scan(float *data, float *local)
 {
-    __shared__ float local[MAX_BLOCK_SIZE];
-    int gindex = threadIdx.x;
+    grid_group g = this_grid();
+    // __shared__ float local[10];
+    int gindex = threadIdx.x + blockIdx.x * blockDim.x;
+    // if we have extra threads that we do not use then we skip (gindex > N)
     int index = gindex;
     local[index] = data[gindex];
     // #if __CUDA_ARCH__ >= 200
-    //     printf("global index aka thread id: %d \n", gindex);
-    //     printf("thread %d local[%d]: %.2f \n", threadIdx.x, index, local[index]);
+    //     printf("global index %d thread id: %d - block id: %d\n", gindex, threadIdx.x, blockIdx.x);
+    //     printf("global index %d thread %d block %d local[%d]: %.7f \n", gindex, threadIdx.x, blockIdx.x, index, local[index]);
     // #endif
-    for (int stride = 1; stride < blockDim.x; stride *= 2)
+    for (int stride = 1; stride < g.group_dim().x * blockDim.x; stride *= 2)
     {
         // #if __CUDA_ARCH__ >= 200
-        //         printf("thread %d stride %d \n", threadIdx.x, stride);
+        //         printf("global index %d thread %d block %d stride %d\n", gindex, threadIdx.x, blockIdx.x, stride);
         // #endif
 
+        // __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
+        g.sync();
+        float addend = 0.0;
+        if (stride <= index)
+        {
+            int newIndex = index - stride;
+            addend = local[newIndex];
+            // #if __CUDA_ARCH__ >= 200
+            //             printf("global index %d thread %d block %d newIndex %d local[newIndex] %.7f addend: %.7f \n", gindex, threadIdx.x, blockIdx.x, newIndex, local[newIndex], addend);
+
+            // #endif
+        }
+        // __syncthreads();
+        g.sync();
+        local[index] += addend;
+        // #if __CUDA_ARCH__ >= 200
+        //         printf("global index %d thread %d block %d new local[%d]: %.7f\n", gindex, threadIdx.x, blockIdx.x, index, local[index]);
+
+        // #endif
+    }
+    data[gindex] = local[index];
+}
+
+__global__ void scanOriginal(float *data)
+{
+    __shared__ float local[10];
+    int gindex = threadIdx.x;
+    int index = gindex;
+    local[index] = data[gindex];
+    for (int stride = 1; stride < blockDim.x; stride *= 2)
+    {
         __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
         float addend = 0.0;
         if (stride <= index)
@@ -82,11 +89,6 @@ __global__ void scan(float *data)
         }
         __syncthreads();
         local[index] += addend;
-        // #if __CUDA_ARCH__ >= 200
-        //         printf("thread %d source %d addend: %d \n", threadIdx.x, index - stride, addend);
-        //         printf("thread %d new local[%d]: %.2f\n", threadIdx.x, index, local[index]);
-
-        // #endif
     }
     data[gindex] = local[index];
 }
@@ -152,9 +154,22 @@ void sort(float *x, float *y, int n)
 void fillArray(float *y, float *data, int n, int sz)
 {
     for (int i = 0; i < n; i++)
-        data[i] = y[i];
+    {
+        // TODO: uncomment this after the algorithm is correct
+        // data[i] = y[i];
+        data[i] = 1;
+    }
+    printf("\n");
     for (int i = n; i < sz; i++)
         data[i] = 0.0; // pad with 0.0's for addition
+}
+
+void printArrayFull(float *data, int n, string title)
+{
+    cout << title << ":";
+    for (int i = 0; i < n; i++)
+        cout << " " << data[i];
+    cout << endl;
 }
 
 void printArray(float *data, int n, string title, int m = 5)
@@ -194,11 +209,25 @@ void readCsv(float *x, float *y, int n)
         getline(s, word, ',');
         y[i] = stof(word);
         row.push_back(word);
-        for (int j = 0; j < int(row.size()); j++)
-        {
-            cout << row[j] << " ";
-        }
-        printf("\n");
+        // for (int j = 0; j < int(row.size()); j++)
+        // {
+        //     cout << row[j] << " ";
+        // }
+        // printf("\n");
+    }
+}
+
+#define gpuErrchk(ans)                        \
+    {                                         \
+        gpuAssert((ans), __FILE__, __LINE__); \
+    }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
+{
+    if (code != cudaSuccess)
+    {
+        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort)
+            exit(code);
     }
 }
 
@@ -206,31 +235,53 @@ int main(void)
 {
     float *x = new float[N];
     float *y = new float[N];
-    float *data;
+    float *data, *local;
     readCsv(x, y, N);
-    printf("print x & y before sorting\n");
-    for (int i = 0; i < N; i++)
-    {
-        cout << x[i] << "," << y[i] << endl;
-    }
     sort(x, y, N);
     printf("print x & y after sorting\n");
-    for (int i = 0; i < N; i++)
-    {
-        cout << x[i] << "," << y[i] << endl;
-    }
+    // for (int i = 0; i < N; i++)
+    // {
+    //     printf("%.7f, %.7f\n", x[i], y[i]);
+    // }
     int threads = MAX_BLOCK_SIZE;
+    int numBlocks = (N + (threads - 1)) / threads; // total blocks we need
+    printf("num block: %d\n", numBlocks);
+    int size = threads * numBlocks;
+    printf("size: %d\n", size);
     // cout << "How many data elements? ";
     // cin >> n;
-    if (N > threads)
+    if (N > size)
     {
         cerr << "Cannot do more than " << threads << " numbers with this simple algorithm!" << endl;
         return 1;
     }
-    cudaMallocManaged(&data, threads * sizeof(*data));
-    fillArray(y, data, N, threads);
-    scan<<<1, threads>>>(data);
-    cudaDeviceSynchronize();
+    printf("foobar\n");
+    cudaMallocManaged(&data, (N + size) * sizeof(*data));
+    cudaMallocManaged(&local, (N + size) * sizeof(*local));
+    fillArray(y, data, N, size);
+    // scan<<<numBlocks, threads>>>(data, local);
+    void *kernelArgs[] = {&data, &local};
+    dim3 dimBlock(threads, 1, 1);
+    dim3 dimGrid(numBlocks, 1, 1);
+    /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
+    int numBlocksPerSm = 0;
+    // Number of threads my_kernel will be launched with
+    int device = 0;
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, device);
+    printf("multiprocessor count: %d\n", deviceProp.multiProcessorCount);
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, scan, threads, 0);
+    printf("number of allowed blocks: %d\n", numBlocksPerSm);
+    cudaLaunchCooperativeKernel((void *)scan, dimGrid, dimBlock, kernelArgs);
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaDeviceSynchronize());
+    // cudaDeviceSynchronize();
     printArray(data, N, "Scan");
+
+    // original scan
+    // fillArray(y, data, N, MAX_BLOCK_SIZE_ORIGINAL);
+    // scanOriginal<<<1, MAX_BLOCK_SIZE_ORIGINAL>>>(data);
+    // cudaDeviceSynchronize();
+    // printArray(data, N, "Scan original");
     return 0;
 }
