@@ -23,64 +23,25 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
-#include <cooperative_groups.h>
 using namespace std;
-using namespace cooperative_groups; // or...
-namespace cg = cooperative_groups;
 
-const int N = 1 << 15;
-const int MAX_BLOCK_SIZE = 1024;        // n threads
-const int MAX_BLOCK_SIZE_ORIGINAL = 16; // n threads
+const int N = 1 << 20;
+const int MAX_BLOCK_SIZE = 1024; // n threads
 
-__global__ void scan(float *data, float *local)
+__global__ void scan(float *data, float *local, int blockId, float *sum)
 {
-    grid_group g = this_grid();
-    // __shared__ float local[10];
-    int gindex = threadIdx.x + blockIdx.x * blockDim.x;
-    // if we have extra threads that we do not use then we skip (gindex > N)
-    int index = gindex;
+    // __shared__ float local[MAX_BLOCK_SIZE];
+    int gindex = threadIdx.x + blockId * blockDim.x;
+    int index = threadIdx.x;
     local[index] = data[gindex];
-    // #if __CUDA_ARCH__ >= 200
-    //     printf("global index %d thread id: %d - block id: %d\n", gindex, threadIdx.x, blockIdx.x);
-    //     printf("global index %d thread %d block %d local[%d]: %.7f \n", gindex, threadIdx.x, blockIdx.x, index, local[index]);
-    // #endif
-    for (int stride = 1; stride < g.group_dim().x * blockDim.x; stride *= 2)
-    {
-        // #if __CUDA_ARCH__ >= 200
-        //         printf("global index %d thread %d block %d stride %d\n", gindex, threadIdx.x, blockIdx.x, stride);
-        // #endif
-
-        // __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
-        g.sync();
-        float addend = 0.0;
-        if (stride <= index)
-        {
-            int newIndex = index - stride;
-            addend = local[newIndex];
-            // #if __CUDA_ARCH__ >= 200
-            //             printf("global index %d thread %d block %d newIndex %d local[newIndex] %.7f addend: %.7f \n", gindex, threadIdx.x, blockIdx.x, newIndex, local[newIndex], addend);
-
-            // #endif
-        }
-        // __syncthreads();
-        g.sync();
-        local[index] += addend;
-        // #if __CUDA_ARCH__ >= 200
-        //         printf("global index %d thread %d block %d new local[%d]: %.7f\n", gindex, threadIdx.x, blockIdx.x, index, local[index]);
-
-        // #endif
-    }
-    data[gindex] = local[index];
-}
-
-__global__ void scanOriginal(float *data)
-{
-    __shared__ float local[10];
-    int gindex = threadIdx.x;
-    int index = gindex;
-    local[index] = data[gindex];
+    // printf("global index aka thread id: %d \n", gindex);
+    // printf("thread %d local[%d]: %.2f \n", threadIdx.x, index, local[index]);
     for (int stride = 1; stride < blockDim.x; stride *= 2)
     {
+        // #if __CUDA_ARCH__ >= 200
+        //         printf("thread %d stride %d \n", threadIdx.x, stride);
+        // #endif
+
         __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
         float addend = 0.0;
         if (stride <= index)
@@ -89,6 +50,26 @@ __global__ void scanOriginal(float *data)
         }
         __syncthreads();
         local[index] += addend;
+        // printf("thread %d source %d addend: %d \n", threadIdx.x, index - stride, addend);
+        // printf("thread %d new local[%d]: %.2f\n", threadIdx.x, index, local[index]);
+    }
+    __syncthreads();
+    // final index of the chunk, then we collect its sum to put in the 2nd tier
+    if (index == MAX_BLOCK_SIZE - 1)
+    {
+        *sum = local[index];
+        // printf("sum in correct index: %.2f\n", *sum);
+    }
+    // data[gindex] = local[index];
+}
+
+__global__ void accumulateSum(float *data, float *local, int blockId, float *sums)
+{
+    int gindex = threadIdx.x + blockId * blockDim.x;
+    int index = threadIdx.x;
+    for (int i = 0; i < blockId; i++)
+    {
+        local[index] += sums[i];
     }
     data[gindex] = local[index];
 }
@@ -176,10 +157,12 @@ void printArray(float *data, int n, string title, int m = 5)
 {
     cout << title << ":";
     for (int i = 0; i < m; i++)
-        cout << " " << data[i];
+        printf(" %.0lf", data[i]);
+    // cout << " " << data[i];
     cout << " ...";
     for (int i = n - m; i < n; i++)
-        cout << " " << data[i];
+        // cout << " " << data[i];
+        printf(" %.0lf", data[i]);
     cout << endl;
 }
 
@@ -231,6 +214,28 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     }
 }
 
+void handleScan(float *data, float *local, int threads, int numBlocks)
+{
+    // scan<<<numBlocks, threads>>>(data, local);
+    /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
+    // Number of threads my_kernel will be launched with
+    float *sums;
+    cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
+    for (int i = 0; i < numBlocks; i++)
+    {
+        float *sum;
+        cudaMallocManaged(&sum, sizeof(float));
+        scan<<<1, MAX_BLOCK_SIZE>>>(data, local, i, sum);
+        gpuErrchk(cudaPeekAtLastError());
+        cudaDeviceSynchronize();
+        sums[i] = *sum;
+        // printf("sum: %.2f\n", *sum);
+        accumulateSum<<<1, MAX_BLOCK_SIZE>>>(data, local, i, sums);
+        gpuErrchk(cudaPeekAtLastError());
+        cudaDeviceSynchronize();
+    }
+}
+
 int main(void)
 {
     float *x = new float[N];
@@ -257,25 +262,9 @@ int main(void)
     }
     printf("foobar\n");
     cudaMallocManaged(&data, (N + size) * sizeof(*data));
-    cudaMallocManaged(&local, (N + size) * sizeof(*local));
+    cudaMallocManaged(&local, MAX_BLOCK_SIZE * sizeof(*local));
     fillArray(y, data, N, size);
-    // scan<<<numBlocks, threads>>>(data, local);
-    void *kernelArgs[] = {&data, &local};
-    dim3 dimBlock(threads, 1, 1);
-    dim3 dimGrid(numBlocks, 1, 1);
-    /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
-    int numBlocksPerSm = 0;
-    // Number of threads my_kernel will be launched with
-    int device = 0;
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, device);
-    printf("multiprocessor count: %d\n", deviceProp.multiProcessorCount);
-    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, scan, threads, 0);
-    printf("number of allowed blocks: %d\n", numBlocksPerSm);
-    cudaLaunchCooperativeKernel((void *)scan, dimGrid, dimBlock, kernelArgs);
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
-    // cudaDeviceSynchronize();
+    handleScan(data, local, threads, numBlocks);
     printArray(data, N, "Scan");
 
     // original scan
