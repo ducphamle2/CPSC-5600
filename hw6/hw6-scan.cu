@@ -219,12 +219,11 @@ void handleScan(float *data, float *local, int threads, int numBlocks)
     // scan<<<numBlocks, threads>>>(data, local);
     /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
     // Number of threads my_kernel will be launched with
-    float *sums;
+    float *sums, *sum;
     cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
+    cudaMallocManaged(&sum, sizeof(float));
     for (int i = 0; i < numBlocks; i++)
     {
-        float *sum;
-        cudaMallocManaged(&sum, sizeof(float));
         scan<<<1, MAX_BLOCK_SIZE>>>(data, local, i, sum);
         gpuErrchk(cudaPeekAtLastError());
         cudaDeviceSynchronize();
