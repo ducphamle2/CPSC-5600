@@ -28,9 +28,9 @@ using namespace std;
 const int N = 1 << 20;
 const int MAX_BLOCK_SIZE = 1024; // n threads
 
-__global__ void scan(float *data, float *local, int blockId, float *sum)
+__global__ void scan(float *data, int blockId, float *sums)
 {
-    // __shared__ float local[MAX_BLOCK_SIZE];
+    __shared__ float local[MAX_BLOCK_SIZE];
     int gindex = threadIdx.x + blockId * blockDim.x;
     int index = threadIdx.x;
     local[index] = data[gindex];
@@ -53,20 +53,14 @@ __global__ void scan(float *data, float *local, int blockId, float *sum)
         // printf("thread %d source %d addend: %d \n", threadIdx.x, index - stride, addend);
         // printf("thread %d new local[%d]: %.2f\n", threadIdx.x, index, local[index]);
     }
-    __syncthreads();
     // final index of the chunk, then we collect its sum to put in the 2nd tier
     if (index == MAX_BLOCK_SIZE - 1)
     {
-        *sum = local[index];
+        sums[blockId] = local[index];
         // printf("sum in correct index: %.2f\n", *sum);
     }
-    // data[gindex] = local[index];
-}
-
-__global__ void accumulateSum(float *data, float *local, int blockId, float *sums)
-{
-    int gindex = threadIdx.x + blockId * blockDim.x;
-    int index = threadIdx.x;
+    __syncthreads();
+    // accumulate the sum
     for (int i = 0; i < blockId; i++)
     {
         local[index] += sums[i];
@@ -214,22 +208,16 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     }
 }
 
-void handleScan(float *data, float *local, int threads, int numBlocks)
+void handleScan(float *data, int threads, int numBlocks)
 {
     // scan<<<numBlocks, threads>>>(data, local);
     /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
     // Number of threads my_kernel will be launched with
-    float *sums, *sum;
+    float *sums;
     cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
-    cudaMallocManaged(&sum, sizeof(float));
     for (int i = 0; i < numBlocks; i++)
     {
-        scan<<<1, MAX_BLOCK_SIZE>>>(data, local, i, sum);
-        gpuErrchk(cudaPeekAtLastError());
-        cudaDeviceSynchronize();
-        sums[i] = *sum;
-        // printf("sum: %.2f\n", *sum);
-        accumulateSum<<<1, MAX_BLOCK_SIZE>>>(data, local, i, sums);
+        scan<<<1, MAX_BLOCK_SIZE>>>(data, i, sums);
         gpuErrchk(cudaPeekAtLastError());
         cudaDeviceSynchronize();
     }
@@ -263,7 +251,7 @@ int main(void)
     cudaMallocManaged(&data, (N + size) * sizeof(*data));
     cudaMallocManaged(&local, MAX_BLOCK_SIZE * sizeof(*local));
     fillArray(y, data, N, size);
-    handleScan(data, local, threads, numBlocks);
+    handleScan(data, threads, numBlocks);
     printArray(data, N, "Scan");
 
     // original scan
