@@ -25,13 +25,15 @@
 #include <sstream>
 using namespace std;
 
-const int N = 1 << 20;
+const int N = 13;
 const int MAX_BLOCK_SIZE = 1024; // n threads
 
-__global__ void scan(float *data, int blockId, float *sums)
+__global__ void scan(float *data, int blockId, int size, float *sums)
 {
     __shared__ float local[MAX_BLOCK_SIZE];
     int gindex = threadIdx.x + blockId * blockDim.x;
+    if (gindex >= size)
+        return;
     int index = threadIdx.x;
     local[index] = data[gindex];
     // printf("global index aka thread id: %d \n", gindex);
@@ -126,7 +128,7 @@ void sort(float *x, float *y, int n)
     }
 }
 
-void fillArray(float *y, float *data, int n, int sz)
+void fillArray(float *data, int n, int sz)
 {
     for (int i = 0; i < n; i++)
     {
@@ -208,7 +210,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     }
 }
 
-void handleScan(float *data, int threads, int numBlocks)
+void handleScan(float *data, int threads, int size, int numBlocks)
 {
     // scan<<<numBlocks, threads>>>(data, local);
     /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
@@ -217,28 +219,38 @@ void handleScan(float *data, int threads, int numBlocks)
     cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
     for (int i = 0; i < numBlocks; i++)
     {
-        scan<<<1, MAX_BLOCK_SIZE>>>(data, i, sums);
+        scan<<<1, MAX_BLOCK_SIZE>>>(data, i, size, sums);
         gpuErrchk(cudaPeekAtLastError());
         cudaDeviceSynchronize();
     }
 }
 
+int calculateSize()
+{
+    // if its already a power of 2 size => we do nothing
+    double result = log2(N);
+    double intpart;
+
+    if (modf(result, &intpart) == 0.0)
+    {
+        return N;
+    }
+    // ceil the result to get the closest power value
+    int ceilPower = ceil(result);
+    printf("ceil: %d\n", ceilPower);
+    printf("result: %.2f\n", result);
+    int numberOfPaddings = pow(2, ceilPower) - N;
+    printf("number of paddings: %d\n", numberOfPaddings);
+    return N + numberOfPaddings;
+}
+
 int main(void)
 {
-    float *x = new float[N];
-    float *y = new float[N];
-    float *data, *local;
-    readCsv(x, y, N);
-    sort(x, y, N);
-    printf("print x & y after sorting\n");
-    // for (int i = 0; i < N; i++)
-    // {
-    //     printf("%.7f, %.7f\n", x[i], y[i]);
-    // }
+    float *data;
     int threads = MAX_BLOCK_SIZE;
     int numBlocks = (N + (threads - 1)) / threads; // total blocks we need
     printf("num block: %d\n", numBlocks);
-    int size = threads * numBlocks;
+    int size = calculateSize();
     printf("size: %d\n", size);
     // cout << "How many data elements? ";
     // cin >> n;
@@ -247,11 +259,9 @@ int main(void)
         cerr << "Cannot do more than " << threads << " numbers with this simple algorithm!" << endl;
         return 1;
     }
-    printf("foobar\n");
-    cudaMallocManaged(&data, (N + size) * sizeof(*data));
-    cudaMallocManaged(&local, MAX_BLOCK_SIZE * sizeof(*local));
-    fillArray(y, data, N, size);
-    handleScan(data, threads, numBlocks);
+    cudaMallocManaged(&data, size * sizeof(*data));
+    fillArray(data, N, size);
+    handleScan(data, threads, size, numBlocks);
     printArray(data, N, "Scan");
 
     // original scan
