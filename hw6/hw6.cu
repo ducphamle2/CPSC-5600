@@ -26,191 +26,6 @@ struct Data
     int originalIndex;
 };
 
-// sort functions
-/**
- * swaps the given elements in the given array
- * (note the __device__ moniker that says it can only
- *  be called from other device code; we don't need it
- *  here, but __device__ functions can return a value
- *  even though __global__'s cannot)
- * @param data the data that we want two elements to be swapped
- * @param a first index that will be swapped
- * @param b second index that will be swapped
- */
-__device__ void swap(Data *data, int a, int b)
-{
-
-    Data temp = data[a];
-    data[a] = data[b];
-    data[b] = temp;
-}
-
-/**
- * Inside of the bitonic sort loop for a particular value of i for a given value of k and j
- * Because each j must be handled sequentially, we can move j out to the host
- * @param data the data pointer that we want to be sorted
- * @param k level k of the bitonic loop
- * @param j inner level j of the bitonic loop
- * @param blockId the current block thread we are handling. This is to mimic the blockIdx.x that CUDA has
- * @param size size of the data pointer
- */
-__global__ void bitonic(Data *data, int k, int j, int blockId, int size)
-{
-    int i = blockDim.x * blockId + threadIdx.x;
-    // skip threads that are out of bound for the data
-    if (i >= size)
-        return;
-    int ixj = i ^ j;
-    // avoid data race by only having the lesser of ixj and i actually do the comparison
-    if (ixj > i)
-    {
-        if ((i & k) == 0 && data[i].x > data[ixj].x)
-            swap(data, i, ixj);
-        if ((i & k) != 0 && data[i].x < data[ixj].x)
-            swap(data, i, ixj);
-    }
-}
-
-/**
- * Inside of the bitonic sort loop for a particular value of i for a given value of k
- * @param data the data pointer that we want to be sorted
- * @param k level k of the bitonic loop
- * @param size size of the data pointer
- */
-__global__ void bitonicSmall(Data *data, int k, int size)
-{
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    // skip threads that are out of bound for the data
-    if (i >= size)
-        return;
-    for (int j = k / 2; j > 0; j /= 2)
-    {
-        int ixj = i ^ j;
-        // avoid data race by only having the lesser of ixj and i actually do the comparison
-        if (ixj > i)
-        {
-            if ((i & k) == 0 && data[i].x > data[ixj].x)
-                swap(data, i, ixj);
-            if ((i & k) != 0 && data[i].x < data[ixj].x)
-                swap(data, i, ixj);
-        }
-        // wait for all the threads to finish before the next comparison/swap
-        __syncthreads();
-    }
-}
-
-/**
- * This is a wrapper for the device's bitonic loop function which puts j in to the device function when the size is small.
- * @param data the data pointer that we want to be sorted
- * @param size size of the data pointer
- * @param numBlocks number of blocks needed to sort
- */
-void sortSmall(Data *data, int size, int numBlocks)
-{
-    // sort it with naive bitonic sort
-    for (int k = 2; k <= size; k *= 2)
-    {
-        bitonicSmall<<<1, MAX_BLOCK_SIZE>>>(data, k, size);
-    }
-    cudaDeviceSynchronize();
-}
-
-/**
- * This is a wrapper for the device's bitonic loop function. It performs the bitonic loop except for the most inner loop i, which is handled by the GPU device
- * @param data the data pointer that we want to be sorted
- * @param size size of the data pointer
- * @param numBlocks number of blocks needed to sort
- */
-void sort(Data *data, int size, int numBlocks)
-{
-    // if size is small, we move j into the device function
-    if (size <= MAX_BLOCK_SIZE)
-    {
-        cout << "Call bitonic sort small" << endl;
-        sortSmall(data, size, numBlocks);
-        return;
-    }
-    cout << "Call bitonic sort large" << endl;
-
-    // sort it with naive bitonic sort
-    for (int k = 2; k <= size; k *= 2)
-    {
-        for (int j = k / 2; j > 0; j /= 2)
-
-        {
-            for (int blockId = 0; blockId < numBlocks; blockId++)
-            {
-                // coming back to the host between values of j acts as a barrier
-                // note that in later hardware (compute capabilty >= 7.0), there is a cuda::barrier avaliable
-                bitonic<<<1, MAX_BLOCK_SIZE>>>(data, k, j, blockId, size);
-            }
-            cudaDeviceSynchronize();
-        }
-    }
-}
-
-// scan functions
-/**
- * Scan a block chunk given a block id
- * @param data data pointer that we want to scan
- * @param blockId the block that we are currently handling
- * @param size data size
- * @param sums the 2nd tier sum array. This array is used to accumulate the sum of each chunk for the next one.
- */
-__global__ void scan(Data *data, int blockId, int size, float *sums)
-{
-    __shared__ float local[MAX_BLOCK_SIZE];
-    int gindex = threadIdx.x + blockId * blockDim.x;
-    int index = threadIdx.x; // because we are using a shared local, local index = threadId
-    if (gindex >= size)
-        return;
-    local[index] = data[gindex].y;
-    // printf("thread %d local[%d]: %.15lf \n", gindex, index, local[index]);
-    for (int stride = 1; stride < blockDim.x; stride *= 2)
-    {
-        __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
-        float addend = 0.0;
-        if (stride <= index)
-        {
-            addend = local[index - stride];
-        }
-        __syncthreads();
-        local[index] += addend;
-        // printf("thread %d source %d addend: %.15lf \n", gindex, index - stride, addend);
-        // printf("thread %d new local[%d]: %.15lf\n", gindex, index, local[index]);
-    }
-    // final index of the chunk which is the reduction of the chunk. We collect its sum to put in the 2nd tier
-    if (index == MAX_BLOCK_SIZE - 1)
-    {
-        sums[blockId] = local[index];
-        // printf("sum in index %d: %.15lf\n", gindex, sums[blockId]);
-    }
-    __syncthreads();
-    // accumulate the sum
-    for (int i = 0; i < blockId; i++)
-    {
-        local[index] += sums[i];
-    }
-    data[gindex].y = local[index];
-}
-
-/**
- * host Scan wrapper function of the device one. It loops through the number of blocks and call the device scan for each chunk
- * @param data data pointer that we want to scan
- * @param size data size
- * @param numBlocks number of blocks needed to scan
- */
-void handleScan(Data *data, int size, int numBlocks)
-{
-    float *sums;
-    cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
-    for (int i = 0; i < numBlocks; i++)
-    {
-        scan<<<1, MAX_BLOCK_SIZE>>>(data, i, size, sums);
-        cudaDeviceSynchronize();
-    }
-}
-
 // utilities
 
 /**
@@ -250,7 +65,7 @@ void printArrayFull(Data *data, int n)
  */
 void printArray(Data *data, int n)
 {
-    if (n <= 5)
+    if (n <= 20)
         printArrayFull(data, n);
     else
         printArrayShort(data, n);
@@ -367,6 +182,172 @@ void writeStdout(Data *data, Data *sortedData, int n)
             myfile << data[i].originalIndex + 1 << "," << sortedData[i].x << "," << sortedData[i].y << "," << data[i].y << "\n";
         }
         myfile.close();
+    }
+}
+
+// sort functions
+/**
+ * swaps the given elements in the given array
+ * (note the __device__ moniker that says it can only
+ *  be called from other device code; we don't need it
+ *  here, but __device__ functions can return a value
+ *  even though __global__'s cannot)
+ * @param data the data that we want two elements to be swapped
+ * @param a first index that will be swapped
+ * @param b second index that will be swapped
+ */
+__device__ void swap(Data *data, int a, int b)
+{
+
+    Data temp = data[a];
+    data[a] = data[b];
+    data[b] = temp;
+}
+
+/**
+ * Inside of the bitonic sort loop for a particular value of i for a given value of k and j
+ * Because each j must be handled sequentially, we can move j out to the host
+ * @param data the data pointer that we want to be sorted
+ * @param k level k of the bitonic loop
+ * @param j inner level j of the bitonic loop
+ * @param blockId the current block thread we are handling. This is to mimic the blockIdx.x that CUDA has
+ * @param size size of the data pointer
+ */
+__global__ void bitonic(Data *data, int k, int j, int blockId, int size)
+{
+    int i = blockDim.x * blockId + threadIdx.x;
+    // skip threads that are out of bound for the data
+    int ixj = i ^ j;
+    // avoid data race by only having the lesser of ixj and i actually do the comparison
+    if (ixj > i)
+    {
+        if ((i & k) == 0 && data[i].x > data[ixj].x)
+            swap(data, i, ixj);
+        if ((i & k) != 0 && data[i].x < data[ixj].x)
+            swap(data, i, ixj);
+    }
+}
+
+/**
+ * Inside of the bitonic sort loop for a particular value of i for a given value of k
+ * @param data the data pointer that we want to be sorted
+ * @param k modified k of the bitonic loop. This value should be smaller than 1024 threads
+ * @param blockId the current block id that we are handling (mimic the blockIdx value of CUDA)
+ * @param originalK the original current k value of the bitonic loop. This value is used for i & k comparison
+ */
+__global__ void bitonicSmall(Data *data, int k, int blockId, int originalK)
+{
+    int i = blockDim.x * blockId + threadIdx.x;
+    // printf("block id %d index in bitonic small %d index k: %d\n", blockId, i, k);
+    // skip threads that are out of bound for the data
+    for (int j = k / 2; j > 0; j /= 2)
+    {
+        int ixj = i ^ j;
+        // avoid data race by only having the lesser of ixj and i actually do the comparison
+        if (ixj > i)
+        {
+            if ((i & originalK) == 0 && data[i].x > data[ixj].x)
+                swap(data, i, ixj);
+            if ((i & originalK) != 0 && data[i].x < data[ixj].x)
+                swap(data, i, ixj);
+        }
+        // wait for all the threads to finish before the next comparison/swap
+        __syncthreads();
+    }
+}
+
+/**
+ * This is a wrapper for the device's bitonic loop function which puts j in to the device function when j is small
+ * @param data the data pointer that we want to be sorted
+ * @param size size of the data pointer
+ * @param numBlocks number of blocks needed to sort
+ */
+void sort(Data *data, int size, int numBlocks)
+{
+    // sort it with naive bitonic sort
+    for (int k = 2; k <= size; k *= 2)
+    {
+        int i = k; // keep track of current j. If j < 1024 then we call bitonic small kernel to improve performance
+        for (int j = k / 2; j >= MAX_BLOCK_SIZE; j /= 2)
+        {
+            // cout << "j: " << j << endl;
+            for (int blockId = 0; blockId < numBlocks; blockId++)
+            {
+                // coming back to the host between values of j acts as a barrier
+                // note that in later hardware (compute capabilty >= 7.0), there is a cuda::barrier avaliable
+                bitonic<<<1, MAX_BLOCK_SIZE>>>(data, k, j, blockId, size);
+            }
+            i = j;
+            cudaDeviceSynchronize();
+        }
+        // when we are at a j value that is small enough (smaller than 1024 threads) then we call the device to let it handle the rest
+        for (int blockId = 0; blockId < numBlocks; blockId++)
+        {
+            bitonicSmall<<<1, MAX_BLOCK_SIZE>>>(data, i, blockId, k);
+        }
+    }
+    cudaDeviceSynchronize();
+}
+
+// scan functions
+/**
+ * Scan a block chunk given a block id
+ * @param data data pointer that we want to scan
+ * @param blockId the block that we are currently handling
+ * @param size data size
+ * @param sums the 2nd tier sum array. This array is used to accumulate the sum of each chunk for the next one.
+ */
+__global__ void scan(Data *data, int blockId, int size, float *sums)
+{
+    __shared__ float local[MAX_BLOCK_SIZE];
+    int gindex = threadIdx.x + blockId * blockDim.x;
+    int index = threadIdx.x; // because we are using a shared local, local index = threadId
+    if (gindex >= size)
+        return;
+    local[index] = data[gindex].y;
+    // printf("thread %d local[%d]: %.15lf \n", gindex, index, local[index]);
+    for (int stride = 1; stride < blockDim.x; stride *= 2)
+    {
+        __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
+        float addend = 0.0;
+        if (stride <= index)
+        {
+            addend = local[index - stride];
+        }
+        __syncthreads();
+        local[index] += addend;
+        // printf("thread %d source %d addend: %.15lf \n", gindex, index - stride, addend);
+        // printf("thread %d new local[%d]: %.15lf\n", gindex, index, local[index]);
+    }
+    // final index of the chunk which is the reduction of the chunk. We collect its sum to put in the 2nd tier
+    if (index == MAX_BLOCK_SIZE - 1)
+    {
+        sums[blockId] = local[index];
+        // printf("sum in index %d: %.15lf\n", gindex, sums[blockId]);
+    }
+    __syncthreads();
+    // accumulate the sum
+    for (int i = 0; i < blockId; i++)
+    {
+        local[index] += sums[i];
+    }
+    data[gindex].y = local[index];
+}
+
+/**
+ * host Scan wrapper function of the device one. It loops through the number of blocks and call the device scan for each chunk
+ * @param data data pointer that we want to scan
+ * @param size data size
+ * @param numBlocks number of blocks needed to scan
+ */
+void handleScan(Data *data, int size, int numBlocks)
+{
+    float *sums;
+    cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
+    for (int i = 0; i < numBlocks; i++)
+    {
+        scan<<<1, MAX_BLOCK_SIZE>>>(data, i, size, sums);
+        cudaDeviceSynchronize();
     }
 }
 
