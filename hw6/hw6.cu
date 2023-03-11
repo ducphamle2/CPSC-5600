@@ -72,6 +72,50 @@ __global__ void bitonic(Data *data, int k, int j, int blockId, int size)
 }
 
 /**
+ * Inside of the bitonic sort loop for a particular value of i for a given value of k
+ * @param data the data pointer that we want to be sorted
+ * @param k level k of the bitonic loop
+ * @param size size of the data pointer
+ */
+__global__ void bitonicSmall(Data *data, int k, int size)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    // skip threads that are out of bound for the data
+    if (i >= size)
+        return;
+    for (int j = k / 2; j > 0; j /= 2)
+    {
+        int ixj = i ^ j;
+        // avoid data race by only having the lesser of ixj and i actually do the comparison
+        if (ixj > i)
+        {
+            if ((i & k) == 0 && data[i].x > data[ixj].x)
+                swap(data, i, ixj);
+            if ((i & k) != 0 && data[i].x < data[ixj].x)
+                swap(data, i, ixj);
+        }
+        // wait for all the threads to finish before the next comparison/swap
+        __syncthreads();
+    }
+}
+
+/**
+ * This is a wrapper for the device's bitonic loop function which puts j in to the device function when the size is small.
+ * @param data the data pointer that we want to be sorted
+ * @param size size of the data pointer
+ * @param numBlocks number of blocks needed to sort
+ */
+void sortSmall(Data *data, int size, int numBlocks)
+{
+    // sort it with naive bitonic sort
+    for (int k = 2; k <= size; k *= 2)
+    {
+        bitonicSmall<<<1, MAX_BLOCK_SIZE>>>(data, k, size);
+    }
+    cudaDeviceSynchronize();
+}
+
+/**
  * This is a wrapper for the device's bitonic loop function. It performs the bitonic loop except for the most inner loop i, which is handled by the GPU device
  * @param data the data pointer that we want to be sorted
  * @param size size of the data pointer
@@ -79,6 +123,15 @@ __global__ void bitonic(Data *data, int k, int j, int blockId, int size)
  */
 void sort(Data *data, int size, int numBlocks)
 {
+    // if size is small, we move j into the device function
+    if (size <= MAX_BLOCK_SIZE)
+    {
+        cout << "Call bitonic sort small" << endl;
+        sortSmall(data, size, numBlocks);
+        return;
+    }
+    cout << "Call bitonic sort large" << endl;
+
     // sort it with naive bitonic sort
     for (int k = 2; k <= size; k *= 2)
     {
@@ -86,7 +139,6 @@ void sort(Data *data, int size, int numBlocks)
 
         {
             for (int blockId = 0; blockId < numBlocks; blockId++)
-
             {
                 // coming back to the host between values of j acts as a barrier
                 // note that in later hardware (compute capabilty >= 7.0), there is a cuda::barrier avaliable
@@ -306,10 +358,13 @@ void writeStdout(Data *data, Data *sortedData, int n)
 
     if (myfile.is_open())
     {
+        myfile << "n,y,x,scan"
+               << "\n";
+
         for (int i = 0; i < n; i++)
         {
             // we display sorted-x,sorted-y,prefix-y,original-index per line
-            myfile << sortedData[i].x << "," << sortedData[i].y << "," << data[i].y << "," << data[i].originalIndex + 1 << "\n";
+            myfile << data[i].originalIndex + 1 << "," << sortedData[i].x << "," << sortedData[i].y << "," << data[i].y << "\n";
         }
         myfile.close();
     }
