@@ -19,3 +19,5 @@ Analysis quiz 7:
 
 sequential: O(N) + O(N) = cost and latency
 parallel: work: O(nlogn) because 2 need 2 * log(n) ops for bsearch, n indexes work on the merge, each calls 2 * log(n) => total is O(n * log(n)); latency: 2 * log(n) because all threads running in parallel, only take 2 * log(n) time for binary search 2 times
+
+Read a certain number of lines in a file: `head -n4 x_y.csv > x_y_3.csv`

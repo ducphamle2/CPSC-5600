@@ -1,21 +1,9 @@
 /**
- * reduce_scan_1block.cu - using dissemination reduction for reducing and scanning a small array with CUDA
- * Kevin Lundeen, Seattle University, CPSC 5600 demo program
+ * hw6.cu - using bitonic sort for sorting the csv file and scanning a list of floating numbers with CUDA
+ * Le Duc Pham, Seattle University, CPSC 5600
  * Notes:
- * - only works for one block (maximum block size for all of CUDA is 1024 threads per block)
- * - eliminated the remaining data races that were in reduce_scan_naive.cu
- * - algo requires power of 2 so we pad with zeros up to 1024 elements
- * - now a bit faster using block shared memory during loops (which also handily exposed the data races we had before)
- */
-
-/**
- * Steps:
- * 1. Identify the format of the input, read & parse it
- * 2. Implement loop bitonic sort on x with 1 thread 1 block, then apply the sort to y
- * 3. Use the Scan function on y with 1 thread 1 block
- * 4. Move to scan on y with 1 block 1024 threads
- * 5. Move to bitonic sort with 1 block 1024 threads (using barrier similarly to hw4)
- * 6. Move to scan with 2^20 elements
+ * Only works for N <= 1 << 20
+ * Works with any number of lines and any number of threads in a block
  */
 
 #include <iostream>
@@ -25,30 +13,18 @@
 #include <sstream>
 using namespace std;
 
-const int N = 10;
-const int MAX_BLOCK_SIZE = 1023; // n threads
+const int N = 1 << 20;           // maximum number of lines we can process
+const int MAX_BLOCK_SIZE = 1024; // n threads in a block
 
+/**
+ * The data structure of the csv file. Each line has an 'x' and 'y' value. 'originalIndex' keeps track of the index of each line before sorting
+ */
 struct Data
 {
     float x;
     float y;
     int originalIndex;
 };
-
-#define gpuErrchk(ans)                        \
-    {                                         \
-        gpuAssert((ans), __FILE__, __LINE__); \
-    }
-inline void
-gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
-{
-    if (code != cudaSuccess)
-    {
-        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort)
-            exit(code);
-    }
-}
 
 // sort functions
 /**
@@ -57,28 +33,26 @@ gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
  *  be called from other device code; we don't need it
  *  here, but __device__ functions can return a value
  *  even though __global__'s cannot)
+ * @param data the data that we want two elements to be swapped
+ * @param a first index that will be swapped
+ * @param b second index that will be swapped
  */
 __device__ void swap(Data *data, int a, int b)
 {
 
-    float temp = data[a].x;
-    data[a].x = data[b].x;
-    data[b].x = temp;
-    // also swap y
-    temp = data[a].y;
-    data[a].y = data[b].y;
-    data[b].y = temp;
-
-    // also swap original index
-    temp = data[a].originalIndex;
-    data[a].originalIndex = data[b].originalIndex;
-    data[b].originalIndex = temp;
+    Data temp = data[a];
+    data[a] = data[b];
+    data[b] = temp;
 }
 
 /**
- * inside of the bitonic sort loop for a particular value of i for a given value of k
- * (this function assumes j <= MAX_BLOCK_SIZE--bigger than that and we'd need to
- *  synchronize across different blocks)
+ * Inside of the bitonic sort loop for a particular value of i for a given value of k and j
+ * Because each j must be handled sequentially, we can move j out to the host
+ * @param data the data pointer that we want to be sorted
+ * @param k level k of the bitonic loop
+ * @param j inner level j of the bitonic loop
+ * @param blockId the current block thread we are handling. This is to mimic the blockIdx.x that CUDA has
+ * @param size size of the data pointer
  */
 __global__ void bitonic(Data *data, int k, int j, int blockId, int size)
 {
@@ -87,9 +61,6 @@ __global__ void bitonic(Data *data, int k, int j, int blockId, int size)
     if (i >= size)
         return;
     int ixj = i ^ j;
-    // printf("i: %d - ixj: %d\n", i, ixj);
-    // printf("i: %d\n - j: %d - k: %d\n", i, j, k);
-    // printf("i & k: %d - data[%d]: %d - data[%d]: %d\n", i & k, i, data[i], ixj, data[ixj]);
     // avoid data race by only having the lesser of ixj and i actually do the comparison
     if (ixj > i)
     {
@@ -98,9 +69,14 @@ __global__ void bitonic(Data *data, int k, int j, int blockId, int size)
         if ((i & k) != 0 && data[i].x < data[ixj].x)
             swap(data, i, ixj);
     }
-    // wait for all the threads to finish before the next comparison/swap
 }
 
+/**
+ * This is a wrapper for the device's bitonic loop function. It performs the bitonic loop except for the most inner loop i, which is handled by the GPU device
+ * @param data the data pointer that we want to be sorted
+ * @param size size of the data pointer
+ * @param numBlocks number of blocks needed to sort
+ */
 void sort(Data *data, int size, int numBlocks)
 {
     // sort it with naive bitonic sort
@@ -112,7 +88,7 @@ void sort(Data *data, int size, int numBlocks)
             for (int blockId = 0; blockId < numBlocks; blockId++)
 
             {
-                // coming back to the host between values of k acts as a barrier
+                // coming back to the host between values of j acts as a barrier
                 // note that in later hardware (compute capabilty >= 7.0), there is a cuda::barrier avaliable
                 bitonic<<<1, MAX_BLOCK_SIZE>>>(data, k, j, blockId, size);
             }
@@ -122,21 +98,24 @@ void sort(Data *data, int size, int numBlocks)
 }
 
 // scan functions
+/**
+ * Scan a block chunk given a block id
+ * @param data data pointer that we want to scan
+ * @param blockId the block that we are currently handling
+ * @param size data size
+ * @param sums the 2nd tier sum array. This array is used to accumulate the sum of each chunk for the next one.
+ */
 __global__ void scan(Data *data, int blockId, int size, float *sums)
 {
     __shared__ float local[MAX_BLOCK_SIZE];
     int gindex = threadIdx.x + blockId * blockDim.x;
-    int index = threadIdx.x;
+    int index = threadIdx.x; // because we are using a shared local, local index = threadId
     if (gindex >= size)
         return;
     local[index] = data[gindex].y;
     // printf("thread %d local[%d]: %.15lf \n", gindex, index, local[index]);
     for (int stride = 1; stride < blockDim.x; stride *= 2)
     {
-        // #if __CUDA_ARCH__ >= 200
-        //         printf("thread %d stride %d \n", threadIdx.x, stride);
-        // #endif
-
         __syncthreads(); // cannot be inside the if-block 'cuz everyone has to call it!
         float addend = 0.0;
         if (stride <= index)
@@ -148,7 +127,7 @@ __global__ void scan(Data *data, int blockId, int size, float *sums)
         // printf("thread %d source %d addend: %.15lf \n", gindex, index - stride, addend);
         // printf("thread %d new local[%d]: %.15lf\n", gindex, index, local[index]);
     }
-    // final index of the chunk, then we collect its sum to put in the 2nd tier
+    // final index of the chunk which is the reduction of the chunk. We collect its sum to put in the 2nd tier
     if (index == MAX_BLOCK_SIZE - 1)
     {
         sums[blockId] = local[index];
@@ -161,51 +140,49 @@ __global__ void scan(Data *data, int blockId, int size, float *sums)
         local[index] += sums[i];
     }
     data[gindex].y = local[index];
-    // printf("data[%d].y: %.15lf\n", gindex, data[gindex].y);
 }
 
-void handleScan(Data *data, int threads, int size, int numBlocks)
+/**
+ * host Scan wrapper function of the device one. It loops through the number of blocks and call the device scan for each chunk
+ * @param data data pointer that we want to scan
+ * @param size data size
+ * @param numBlocks number of blocks needed to scan
+ */
+void handleScan(Data *data, int size, int numBlocks)
 {
-    // scan<<<numBlocks, threads>>>(data, local);
-    /// This will launch a grid that can maximally fill the GPU, on the default stream with kernel arguments
-    // Number of threads my_kernel will be launched with
     float *sums;
     cudaMallocManaged(&sums, numBlocks * sizeof(*sums));
     for (int i = 0; i < numBlocks; i++)
     {
         scan<<<1, MAX_BLOCK_SIZE>>>(data, i, size, sums);
-        gpuErrchk(cudaPeekAtLastError());
         cudaDeviceSynchronize();
     }
 }
 
 // utilities
-void fillArrayScan(float *y, float *data, int n, int sz)
-{
-    for (int i = 0; i < n; i++)
-        data[i] = y[i];
-    for (int i = n; i < sz; i++)
-        data[i] = 0.0; // pad with 0.0's for addition
-}
 
+/**
+ * Fill the array with paddings so that the algorithms can work with any number of rows
+ * @param data pointer data that we want to fill in
+ * @param n the original size of the data
+ * @param sz the additional size that we want to add paddings
+ */
 void fillArray(Data *data, int n, int sz)
 {
     for (int i = n; i < sz; i++)
     {
-        data[i].x = std::numeric_limits<int>::max(); // pad with maximum for addition
-        data[i].y = 0.0;
+        data[i].x = std::numeric_limits<int>::max(); // pad with maximum for sorting
+        data[i].y = 0.0;                             // pad with 0 for scanning
     }
 }
 
 void printArrayShort(Data *data, int n, int m = 5)
 {
     for (int i = 0; i < m; i++)
-        printf(" %.3lf,%.3lf\n", data[i].x, data[i].y);
-    // cout << " " << data[i];
+        cout << " " << data[i].x << ", " << data[i].y << endl;
     cout << " ..." << endl;
     for (int i = n - m; i < n; i++)
-        // cout << " " << data[i];
-        printf(" %.3lf,%.3lf\n", data[i].x, data[i].y);
+        cout << " " << data[i].x << ", " << data[i].y << endl;
     cout << endl;
 }
 
@@ -216,6 +193,9 @@ void printArrayFull(Data *data, int n)
     cout << endl;
 }
 
+/**
+ * print the array depending on its size
+ */
 void printArray(Data *data, int n)
 {
     if (n <= 5)
@@ -224,12 +204,55 @@ void printArray(Data *data, int n)
         printArrayShort(data, n);
 }
 
-void readCsv(Data *data, int n)
+/**
+ * Read the total number of lines of a file
+ * @param filename the name of the file we want to read
+ */
+int readCsvLines(const char *filename)
+{
+    fstream fin;
+    // Open an existing file
+    fin.open(filename, ios::in);
+    if (fin.peek() == std::ifstream::traits_type::eof())
+    {
+        throw runtime_error("The file is empty!");
+    }
+
+    // Read the Data from the file
+    // as String Vector
+    string line, word, temp;
+    int n_lines = -1; // we dont count the first row, which is x, y
+
+    // count the number of lines in a file
+    while (fin.peek() != EOF)
+    {
+        getline(fin, line);
+        n_lines++;
+    }
+    fin.close();
+    // we dont accept files that are larger than 1 << 20 lines
+    if (n_lines > N)
+    {
+        throw runtime_error("The file size is larger than 1 << 20. Invalid!");
+    }
+    return n_lines;
+}
+
+/**
+ * Read the content of a csv file given a pre-defined line count
+ * @param data - data pointer we want to put the content in
+ * @param n - total line count of the file
+ * @param filename - filename to collect content
+ */
+void readCsv(Data *data, int n, const char *filename)
 {
     // File pointer
     fstream fin;
-    // Open an existing file
-    fin.open("x_y.csv", ios::in);
+    fin.open(filename, ios::in);
+    if (fin.peek() == std::ifstream::traits_type::eof())
+    {
+        throw runtime_error("The file is empty!");
+    }
 
     // Read the Data from the file
     // as String Vector
@@ -250,38 +273,42 @@ void readCsv(Data *data, int n)
         getline(s, word, ',');
         data[i].y = stof(word);
         data[i].originalIndex = i;
-        // data[i].y = 0.000001;
         row.push_back(word);
     }
 }
 
-int calculateSize()
+/**
+ * Calculate the nearest power of 2 value given an integer
+ * This function helps us calculate the number of paddings we need for the file to have the size of a power of 2
+ * @param n original size
+ */
+int calculateSize(int n)
 {
-    // if its already a power of 2 size => we do nothing
-    double result = log2(N);
-    printf("result: %.2f\n", result);
+    double result = log2(n);
     double intpart;
 
+    // if its already a power of 2 size => we return it
     if (modf(result, &intpart) == 0.0)
     {
-        return N;
+        return n;
     }
     // ceil the result to get the closest power value
     int ceilPower = ceil(result);
-    printf("ceil: %d\n", ceilPower);
-    int numberOfPaddings = pow(2, ceilPower) - N;
-    printf("number of paddings: %d\n", numberOfPaddings);
-    return N + numberOfPaddings;
+    return pow(2, ceilPower);
 }
 
-void writeStdout(Data *data, Data *sortedData)
+/**
+ * write the processed data to a csv file
+ */
+void writeStdout(Data *data, Data *sortedData, int n)
 {
     ofstream myfile("output.csv");
 
     if (myfile.is_open())
     {
-        for (int i = 0; i < N; i++)
+        for (int i = 0; i < n; i++)
         {
+            // we display sorted-x,sorted-y,prefix-y,original-index per line
             myfile << sortedData[i].x << "," << sortedData[i].y << "," << data[i].y << "," << data[i].originalIndex + 1 << "\n";
         }
         myfile.close();
@@ -290,36 +317,38 @@ void writeStdout(Data *data, Data *sortedData)
 
 int main(void)
 {
-    // float value = 0.013956000097096 + 0.025529000908136 + 0.409162014722824 + 1.002696037292480 + 1.152063012123108 + 1.154309034347534 + 0.114110000431538;
-    // printf("final value: %.15lf\n", value);
+    string filename;
+    cout << "Type the csv file you want to read: ";
+    cin >> filename; // get user input from the keyboard
+    const char *filename_raw = filename.c_str();
+    int n = readCsvLines(filename_raw);
     Data *data, *sortedData;
     // prepare size for sorting & scanning
-    int size = calculateSize();
+    int size = calculateSize(n);
     printf("size: %d\n", size);
-    int threads = MAX_BLOCK_SIZE;
-    printf("maximum block size: %d\n", threads);
-    int numBlocks = (size + (threads - 1)) / threads; // total blocks we need
+    int numBlocks = (size + (MAX_BLOCK_SIZE - 1)) / MAX_BLOCK_SIZE; // total blocks we need
     printf("num block: %d\n", numBlocks);
-    cudaMallocManaged(&data, size * sizeof(*data));
-    sortedData = (Data *)malloc(N * sizeof(*sortedData));
 
-    // float *data;
-    readCsv(data, N);
+    cudaMallocManaged(&data, size * sizeof(*data));
+    sortedData = (Data *)malloc(n * sizeof(*sortedData));
+
+    // retrieve the content of the file & put it into the data variable
+    readCsv(data, n, filename_raw);
     printf("print x & y before sorting & scanning\n");
-    printArray(data, N);
+    printArray(data, n);
 
     // sort
-    fillArray(data, N, size);
+    fillArray(data, n, size);
     sort(data, size, numBlocks);
-    memcpy(sortedData, data, N * sizeof(*sortedData)); // keep a copy of the original to write to csv file
+    memcpy(sortedData, data, n * sizeof(*sortedData)); // keep a copy of the original to write to csv file
 
     // scan
-    handleScan(data, threads, size, numBlocks);
+    handleScan(data, size, numBlocks);
     printf("print x & y after scanning & sorting\n");
-    printArray(data, N);
+    printArray(data, n);
 
     // write to csv
-    writeStdout(data, sortedData);
+    writeStdout(data, sortedData, n);
     cudaFree(data);
     free(sortedData);
 
