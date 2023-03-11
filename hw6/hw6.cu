@@ -358,7 +358,7 @@ void writeStdout(Data *data, Data *sortedData, int n)
 
     if (myfile.is_open())
     {
-        myfile << "n,y,x,scan"
+        myfile << "n,x,y,scan"
                << "\n";
 
         for (int i = 0; i < n; i++)
